@@ -1,56 +1,37 @@
-import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
-import AuditForm from "./pages/AuditForm";
-import History from "./pages/History";
-import AuditorDashboard from "./pages/AuditorDashboard";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import MainLayout from "./layouts/MainLayout";
+import OtipbModule from "./modules/otipb/OtipbModule";
+import AuditForm from "./modules/otipb/components/AuditForm";
+import History from "./modules/otipb/components/History";
+import LoginForm from "./layouts/Auth";
+import ProtectedRoute from "./ProtectedRoute";
+import WelcomePage from "./layouts/WelcomePage";
+import Booking from "./modules/lab/components/Booking";
 
 function App() {
   return (
     <BrowserRouter>
-      <nav
-        style={{ background: "#333", padding: "15px", marginBottom: "20px" }}>
-        <div
-          style={{
-            maxWidth: "1200px",
-            margin: "0 auto",
-            display: "flex",
-            gap: "20px",
-            alignItems: "center",
-          }}>
-          <Link
-            to="/"
-            style={{
-              color: "white",
-              textDecoration: "none",
-              fontWeight: "bold",
-            }}>
-            📝 Новая проверка
-          </Link>
-          <Link
-            to="/history"
-            style={{
-              color: "white",
-              textDecoration: "none",
-              fontWeight: "bold",
-            }}>
-            📋 История
-          </Link>
-          <Link
-            to="/dashboard"
-            style={{
-              color: "white",
-              textDecoration: "none",
-              fontWeight: "bold",
-            }}>
-            👨‍💼 Кабинет аудитора
-          </Link>
-        </div>
-      </nav>
-
       <Routes>
-        <Route path="/" element={<AuditForm />} />
-        <Route path="/history" element={<History />} />
-        <Route path="/dashboard" element={<AuditorDashboard />} />
-        <Route path="/dashboard/:name" element={<AuditorDashboard />} />
+        <Route path="/login" element={<LoginForm />} />
+        <Route
+          path="/*"
+          element={
+            <ProtectedRoute>
+              <MainLayout />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<WelcomePage />} />
+          {/* Группа маршрутов для ОТиПБ с общим лейаутом (табы) */}
+          <Route path="otipb" element={<OtipbModule />}>
+            <Route index element={<Navigate to="audit" replace />} />
+            <Route path="audit" element={<AuditForm />} />
+            <Route path="history" element={<History />} />
+          </Route>
+          <Route path="lab/booking" element={<Booking />} />
+        </Route>
+        {/* Fallback */}
+        <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>
   );

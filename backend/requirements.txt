@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+pydantic
+sqlalchemy
+pandas
+openpyxl
+python-jose[cryptography]
+passlib[bcrypt]

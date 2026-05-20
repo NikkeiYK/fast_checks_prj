@@ -14,6 +14,7 @@ import io
 import json
 from enum import Enum as PyEnum
 import logging
+import os
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO,
@@ -23,7 +24,16 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 # КОНФИГУРАЦИЯ
 # =============================================================================
-DATABASE_URL = "sqlite:///./audit_db_v2.sqlite"
+
+
+# Определяем, где мы находимся
+if os.environ.get("AMVERA") == "1":
+    # На хостинге Amvera — сохраняем БД в /data
+    DATABASE_URL = "sqlite:////data/audit_db_v2.sqlite"
+else:
+    # У себя на компьютере — сохраняем рядом с кодом
+    DATABASE_URL = "sqlite:///./audit_db_v2.sqlite"
+
 Base = declarative_base()
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -42,15 +52,45 @@ app.add_middleware(
 # =============================================================================
 # СПРАВОЧНИКИ
 # =============================================================================
-CENTERS_LIST = ["Казань", "Москва", "Пермь", "Всеволожск",
-                "Красноярск", "Нижнекамск", "Нижний Новгород", "Воронеж"]
-DEPARTMENTS_LIST = ["СПОР", "Прикладные разработки",
-                    "Продуктовое развитие", "РПИ", "РПС", "ЦИРМ", "НТР"]
+CENTERS_LIST = [
+    "Казань", 
+    "Москва", 
+    "Пермь", 
+    "Всеволожск",
+    "Красноярск", 
+    "Нижнекамск", 
+    "Нижний Новгород", 
+    "Воронеж"
+]
+
+DEPARTMENTS_LIST = [
+    "СПОР", 
+    "Прикладные разработки",
+    "Продуктовое развитие", 
+    "РПИ", 
+    "РПС", 
+    "ЦИРМ", 
+    "НТР"
+]
+
 ALL_QUESTIONS_TEXT = [
-    "Соблюдение ТБ", "Знание SOP", "Ведение журналов", "Калибровка оборудования",
-    "Хранение реактивов", "Утилизация отходов", "Работа с СИЗ", "Документирование",
-    "Внутренний контроль", "Внешний контроль", "Работа с LIMS", "Сроки анализов",
-    "Коммуникация", "Наставничество", "Управление рисками", "Нештатные ситуации", "Этика"
+    "Соблюдение ТБ", 
+    "Знание SOP", 
+    "Ведение журналов", 
+    "Калибровка оборудования",
+    "Хранение реактивов", 
+    "Утилизация отходов", 
+    "Работа с СИЗ", 
+    "Документирование",
+    "Внутренний контроль", 
+    "Внешний контроль", 
+    "Работа с LIMS", 
+    "Сроки анализов",
+    "Коммуникация", 
+    "Наставничество", 
+    "Управление рисками", 
+    "Нештатные ситуации", 
+    "Этика"
 ]
 
 # =============================================================================
@@ -181,6 +221,46 @@ def get_db():
 # ENDPOINTS
 # =============================================================================
 
+# =============================================================================
+# 🔐 ПРОСТАЯ АВТОРИЗАЦИЯ (MVP)
+# =============================================================================
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class LoginResponse(BaseModel):
+    success: bool
+    message: str
+    user: Optional[dict] = None
+
+# Сервисная учетка (хардкод для MVP)
+SERVICE_ACCOUNT = {
+    "username": "polylab",
+    "password": "2026",
+    "display_name": "Polilab Service",
+    "role": "auditor"
+}
+
+@app.post("/api/login")
+def login(data: LoginRequest):
+    """Простая проверка логина/пароля для MVP"""
+    if data.username == SERVICE_ACCOUNT["username"] and data.password == SERVICE_ACCOUNT["password"]:
+        return LoginResponse(
+            success=True,
+            message="Вход выполнен",
+            user={
+                "username": SERVICE_ACCOUNT["username"],
+                "display_name": SERVICE_ACCOUNT["display_name"],
+                "role": SERVICE_ACCOUNT["role"]
+            }
+        )
+    raise HTTPException(status_code=401, detail="Неверный логин или пароль")
+
+@app.get("/api/me")
+def get_current_user():
+    """Для проверки: возвращает инфо о сервисной учетке (если нужно)"""
+    return {"username": SERVICE_ACCOUNT["username"], "role": SERVICE_ACCOUNT["role"]}
 
 @app.get("/api/meta")
 def get_meta(db: Session = Depends(get_db)):
@@ -383,29 +463,29 @@ def get_history(
     return result
 
 
-@app.get("/api/dashboard/{auditor_name}")
-def get_auditor_dashboard(auditor_name: str, db: Session = Depends(get_db)):
-    sessions = db.query(AuditSession).filter(
-        AuditSession.auditor_fio == auditor_name
-    ).join(AuditSession.employee).options(
-        joinedload(AuditSession.answers).joinedload(AuditAnswer.question)
-    ).all()
+# @app.get("/api/dashboard/{auditor_name}")
+# def get_auditor_dashboard(auditor_name: str, db: Session = Depends(get_db)):
+#     sessions = db.query(AuditSession).filter(
+#         AuditSession.auditor_fio == auditor_name
+#     ).join(AuditSession.employee).options(
+#         joinedload(AuditSession.answers).joinedload(AuditAnswer.question)
+#     ).all()
 
-    report = {}
-    for s in sessions:
-        key = f"{s.employee.fio} ({s.employee.department})"
-        if key not in report:
-            report[key] = {"name": s.employee.fio,
-                           "dept": s.employee.department, "quarters": {}}
-        q = s.quarter
-        if q not in report[key]["quarters"]:
-            report[key]["quarters"][q] = {"status": s.status, "questions": []}
-        for ans in s.answers:
-            report[key]["quarters"][q]["questions"].append({
-                "num": ans.question.index_num,
-                "result": ans.result
-            })
-    return list(report.values())
+#     report = {}
+#     for s in sessions:
+#         key = f"{s.employee.fio} ({s.employee.department})"
+#         if key not in report:
+#             report[key] = {"name": s.employee.fio,
+#                            "dept": s.employee.department, "quarters": {}}
+#         q = s.quarter
+#         if q not in report[key]["quarters"]:
+#             report[key]["quarters"][q] = {"status": s.status, "questions": []}
+#         for ans in s.answers:
+#             report[key]["quarters"][q]["questions"].append({
+#                 "num": ans.question.index_num,
+#                 "result": ans.result
+#             })
+#     return list(report.values())
 
 
 @app.get("/api/export-excel")

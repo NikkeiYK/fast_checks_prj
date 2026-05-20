@@ -1,7 +1,6 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect } from "react";
 import axios from "axios";
-import { API } from "../config";
+import { API } from "../../../config";
 
 export default function AuditForm() {
   const [meta, setMeta] = useState<any>(null);
@@ -285,7 +284,7 @@ export default function AuditForm() {
           </select>
         </div>
 
-        <h4>❓ Вопросы для этой сессии</h4>
+        <h4>Вопросы по списку:</h4>
 
         {/* ✅ Кнопки управления вопросами */}
         <div

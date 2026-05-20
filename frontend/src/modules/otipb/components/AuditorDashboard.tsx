@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect } from "react";
 import axios from "axios";
-import { API } from "../config";
+import { API } from "../../../config";
 import { useParams, useNavigate } from "react-router-dom";
 
 export default function AuditorDashboard() {
