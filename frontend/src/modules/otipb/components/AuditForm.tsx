@@ -177,13 +177,13 @@ export default function AuditForm() {
   return (
     <div style={containerStyle}>
       <h2>📝 Новая проверка</h2>
-      <a
+      {/* <a
         href={API.export}
         target="_blank"
         rel="noopener noreferrer"
         style={exportBtnStyle}>
         📥 Excel
-      </a>
+      </a> */}
 
       <form onSubmit={handleSubmit} style={formStyle}>
         <h4>👤 Аудитор</h4>

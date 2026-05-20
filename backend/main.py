@@ -74,23 +74,23 @@ DEPARTMENTS_LIST = [
 ]
 
 ALL_QUESTIONS_TEXT = [
-    "Соблюдение ТБ", 
-    "Знание SOP", 
-    "Ведение журналов", 
-    "Калибровка оборудования",
-    "Хранение реактивов", 
-    "Утилизация отходов", 
-    "Работа с СИЗ", 
-    "Документирование",
-    "Внутренний контроль", 
-    "Внешний контроль", 
-    "Работа с LIMS", 
-    "Сроки анализов",
-    "Коммуникация", 
-    "Наставничество", 
-    "Управление рисками", 
-    "Нештатные ситуации", 
-    "Этика"
+    "Действия при обнаружении возгорания/задымления.",
+    "Действия при атаке беспилотников/ракетная опасность. Сценарий 1,2.",
+    "Действия при обнаружении пострадавшего.",
+    "Бизнес контракт ОТиПБ, метрики.",
+    "Бизнес контракт СИБУР ПолиЛаб.",
+    "Виды кровотечений, первая помощь ранее шеи, повреждение артерии. Первая помощь при отравлении.",
+    "Телефоны экстренных служб.",
+    "Набор ЛАРН/ЛАРХВ/демеркуризационный набор — место расположения, порядок действий.",
+    "АБВР.",
+    "Какая была последняя молния, выводы.",
+    "Какие правила безопасности нужно соблюдать при использовании электрооборудования? Действия при электротравме?",
+    "Правила работы с химическими веществами (прекурсоры, метанол, ЛВЖ, ГЖ).",
+    "Простые экологические правила. Виды отходов ПолиЛаб. Места складирования. Экологические аспекты.",
+    "Первая помощь при падении сотрудника с высоты.",
+    "Виды первичных средств пожаротушения, правила использования и места расположения.",
+    "Термические и химические ожоги. Первая помощь.",
+    "КПБ"
 ]
 
 # =============================================================================
@@ -488,39 +488,84 @@ def get_history(
 #     return list(report.values())
 
 
+# =============================================================================
+# 📥 ВЫГРУЗКА В ИСТОРИИ (новый формат колонок)
+# =============================================================================
+
 @app.get("/api/export-excel")
-def export_excel(db: Session = Depends(get_db)):
-    sessions = db.query(AuditSession).options(
+def export_excel(
+    auditor_fio: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    center: Optional[str] = Query(None),
+    quarter: Optional[str] = Query(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Выгрузка в точном формате:
+    Подразделение | ФИО | Центр ПолиЛаб | Отчетный месяц | Вопрос | Дата | Статус | 
+    Кто провел БП ФИО | Подразделение проводившего | ID_проверки
+    """
+    # Фильтры (как в /api/history)
+    query = db.query(AuditSession).join(AuditSession.employee).options(
         joinedload(AuditSession.answers).joinedload(AuditAnswer.question)
-    ).all()
+    )
+    if auditor_fio:
+        query = query.filter(AuditSession.auditor_fio.ilike(f"%{auditor_fio}%"))
+    if date_from:
+        query = query.filter(AuditSession.check_date >= date_from)
+    if date_to:
+        query = query.filter(AuditSession.check_date <= date_to)
+    if status:
+        query = query.filter(AuditSession.status == status)
+    if center:
+        query = query.filter(AuditSession.center == center)
+    if quarter:
+        query = query.filter(AuditSession.quarter == quarter)
+    
+    sessions = query.all()
 
-    data = []
+    # Формируем строки: ОДНА строка на КАЖДЫЙ ответ (не на сессию!)
+    rows = []
     for s in sessions:
-        row = {
-            "Дата": s.check_date,
-            "Квартал": s.quarter,
-            "Аудитор": s.auditor_fio,
-            "Центр аудитора": s.center,
-            "Сотрудник": s.employee.fio,
-            "Подразделение": s.employee.department,
-            "Центр сотрудника": s.employee.center,
-            "Статус": s.status
-        }
+        # Отчетный месяц в формате "ММ.ГГГГ"
+        check_dt = datetime.strptime(s.check_date, "%Y-%m-%d")
+        report_month = f"{check_dt.month:02d}.{check_dt.year}"
+        
         for ans in s.answers:
-            row[f"Q{ans.question.index_num}"] = ans.result
-        data.append(row)
+            status_ru = "Сдал" if ans.result == "passed" else "Не сдал"
+            rows.append({
+                "Подразделение": s.employee.department,
+                "ФИО": s.employee.fio,
+                "Центр ПолиЛаб": s.employee.center,
+                "Отчетный месяц": report_month,
+                "Вопрос": ans.question.text,
+                "Дата": s.check_date,
+                "Статус": status_ru,
+                "Кто провел БП ФИО": s.auditor_fio,
+                "Подразделение проводившего": s.auditor_dept,
+                "ID_проверки": s.id,
+            })
 
-    df = pd.DataFrame(data)
+    df = pd.DataFrame(rows, columns=[
+        "Подразделение", "ФИО", "Центр ПолиЛаб", "Отчетный месяц",
+        "Вопрос", "Дата", "Статус", "Кто провел БП ФИО",
+        "Подразделение проводившего", "ID_проверки"
+    ])
+
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='Audit Report')
     output.seek(0)
 
+    # Имя файла с датой
+    filename = f"polilab_audit_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={
-            "Content-Disposition": "attachment; filename=polilab_audit_full.xlsx"}
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 
 

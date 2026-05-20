@@ -74,7 +74,27 @@ export default function History() {
   return (
     <div style={pageContainer}>
       <h2>📋 История проверок</h2>
-
+      <a href={`${API.export}?${new URLSearchParams(
+      Object.fromEntries(
+        Object.entries(appliedFilters).filter(([_, v]) => v)
+      )
+    )}`}
+    target="_blank"
+    rel="noopener noreferrer"
+    style={{
+      background: "#107c41",
+      color: "#fff",
+      padding: "10px 18px",
+      textDecoration: "none",
+      borderRadius: 6,
+      fontSize: 14,
+      fontWeight: 500,
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 6,
+    }}>
+    📥 Выгрузить Excel
+  </a>
       <div style={filtersPanel}>
         <input
           placeholder="Аудитор"
