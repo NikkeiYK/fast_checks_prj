@@ -1,28 +1,51 @@
+// WelcomePage.tsx
+import { useState } from "react";
+
 export default function WelcomePage() {
+  const [isLoaded, setIsLoaded] = useState(false);
+  
+  // Простая анимация появления
+  useState(() => {
+    requestAnimationFrame(() => setIsLoaded(true));
+  });
+
   return (
-    <div style={styles.container}>
-      {/* Фоновые декоративные элементы */}
-      <div style={styles.backgroundDecor} />
-      
-      <div style={styles.content}>
-        {/* Крупный заголовок */}
-        <h1 style={styles.mainTitle}>
-          <span style={styles.titleAccent}>POLYLAB</span>
-          <br />
-          <span style={styles.titleSecondary}>PLATFORM</span>
-        </h1>
-        
-        <p style={styles.subtitle}>
-          Система управления аудитами и отчётностью
-        </p>
-
-        
-
-        {/* Футер с информацией */}
-        <div style={styles.footer}>
-          <span style={styles.version}>v1.0.0</span>
+    <div style={{
+      ...styles.container,
+      opacity: isLoaded ? 1 : 0,
+      transform: isLoaded ? "translateY(0)" : "translateY(8px)",
+      transition: "opacity 300ms ease, transform 300ms ease",
+    }}>
+      {/* Заголовок */}
+      <header style={styles.header}>
+        <div style={styles.headerContent}>
+          <h1 style={styles.mainTitle}>
+            Цифровые помощники НИОКР
+          </h1>
+          <p style={styles.subtitle}>
+            Выберите сервис в левом меню для начала работы.
+            Инструменты для исследований, анализа данных и автоматизации процессов.
+          </p>
         </div>
-      </div>
+      </header>
+
+      {/* Карточки сервисов (опционально) */}
+      <section style={styles.servicesGrid}>
+        <div style={styles.serviceCard}>
+          <span style={styles.serviceIcon}>🛡️</span>
+          <h3 style={styles.serviceTitle}>ОТиПБ</h3>
+          <p style={styles.serviceDesc}>
+            Быстрые проверки, отчёты и мониторинг безопасности.
+          </p>
+        </div>
+        <div style={styles.serviceCard}>
+          <span style={styles.serviceIcon}>🔬</span>
+          <h3 style={styles.serviceTitle}>ЦИРМ</h3>
+          <p style={styles.serviceDesc}>
+            Бронирование оборудования и управление лабораторными ресурсами.
+          </p>
+        </div>
+      </section>
     </div>
   );
 }
@@ -31,142 +54,98 @@ const styles: Record<string, React.CSSProperties> = {
   container: {
     minHeight: "100vh",
     display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "linear-gradient(135deg, #667eea 0%, #764ba2 50%, #008B92 100%)",
-    position: "relative",
-    overflow: "hidden",
-    fontFamily: "system-ui, -apple-system, sans-serif",
-    padding: "24px",
+    flexDirection: "column",
+    backgroundColor: "#F8FAFC",
+    fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+    padding: "32px",
+    boxSizing: "border-box",
   },
-  backgroundDecor: {
-    position: "absolute",
-    width: "600px",
-    height: "600px",
-    borderRadius: "50%",
-    background: "rgba(255, 255, 255, 0.1)",
-    filter: "blur(80px)",
-    top: "-200px",
-    right: "-200px",
-    zIndex: 0,
-    animation: "float 8s ease-in-out infinite",
-  } as React.CSSProperties,
-  content: {
-    position: "relative",
-    zIndex: 1,
-    textAlign: "center",
-    maxWidth: "900px",
-    width: "100%",
+  
+  header: {
+    marginBottom: "40px",
   },
+  
+  headerContent: {
+    maxWidth: "720px",
+  },
+  
   mainTitle: {
-    fontSize: "clamp(48px, 12vw, 96px)",
-    fontWeight: 800,
-    color: "#fff",
+    fontSize: "clamp(32px, 5vw, 48px)",
+    fontWeight: 700,
+    color: "#0F172A",
     margin: "0 0 16px 0",
-    lineHeight: 1.1,
+    lineHeight: 1.15,
     letterSpacing: "-0.03em",
-    textShadow: "0 4px 30px rgba(0, 0, 0, 0.2)",
-    animation: "fadeInUp 0.6s ease-out",
   },
-  titleAccent: {
-    background: "linear-gradient(90deg, #fff, #e0f7fa)",
-    backgroundClip: "text",
-    WebkitBackgroundClip: "text",
-    color: "transparent",
-  },
-  titleSecondary: {
-    color: "rgba(255, 255, 255, 0.95)",
-    fontSize: "0.9em",
-  },
+  
   subtitle: {
-    fontSize: "clamp(16px, 2.5vw, 20px)",
-    color: "rgba(255, 255, 255, 0.85)",
-    margin: "0 0 48px 0",
+    color: "#475569",
+    fontSize: "18px",
     fontWeight: 400,
-    animation: "fadeInUp 0.6s ease-out 0.1s both",
+    lineHeight: 1.6,
+    margin: 0,
+    maxWidth: "580px",
   },
-  cards: {
+  
+  servicesGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
     gap: "20px",
-    marginBottom: "40px",
-    animation: "fadeInUp 0.6s ease-out 0.2s both",
+    marginBottom: "auto",
   },
-  cardLink: {
-    textDecoration: "none",
+  
+  serviceCard: {
+    background: "#FFFFFF",
+    padding: "24px",
+    borderRadius: "12px",
+    border: "1px solid #E2E8F0",
+    boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
+    transition: "box-shadow 200ms ease, border-color 200ms ease",
+    cursor: "default",
+  },
+  
+  serviceIcon: {
+    fontSize: "28px",
+    marginBottom: "12px",
     display: "block",
   },
-  card: {
-    background: "rgba(255, 255, 255, 0.95)",
-    borderRadius: "20px",
-    padding: "28px 24px",
-    textAlign: "left",
-    transition: "transform 0.2s ease, box-shadow 0.2s ease",
-    boxShadow: "0 10px 40px rgba(0, 0, 0, 0.15)",
-    cursor: "pointer",
-    position: "relative",
-    overflow: "hidden",
-  } as React.CSSProperties,
-  cardIcon: {
-    fontSize: "32px",
-    marginBottom: "12px",
-  },
-  cardTitle: {
-    margin: "0 0 8px 0",
-    fontSize: "20px",
+  
+  serviceTitle: {
+    fontSize: "16px",
     fontWeight: 600,
     color: "#0F172A",
+    margin: "0 0 8px 0",
   },
-  cardDesc: {
-    margin: "0 0 16px 0",
+  
+  serviceDesc: {
     fontSize: "14px",
     color: "#64748B",
+    margin: 0,
     lineHeight: 1.5,
   },
-  cardArrow: {
-    position: "absolute",
-    right: "24px",
-    bottom: "28px",
-    fontSize: "20px",
-    color: "#008B92",
-    transition: "transform 0.2s ease",
-  },
+  
   footer: {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    gap: "8px",
-    color: "rgba(255, 255, 255, 0.7)",
-    fontSize: "13px",
-    animation: "fadeInUp 0.6s ease-out 0.3s both",
+    gap: "12px",
+    paddingTop: "32px",
+    marginTop: "auto",
   },
-  divider: {
-    opacity: 0.5,
-  },
+  
   version: {
     fontWeight: 500,
+    fontSize: "13px",
+    color: "#94A3B8",
   },
+  
+  separator: {
+    color: "#CBD5E1",
+    fontSize: "13px",
+  },
+  
   copyright: {
-    fontWeight: 400,
+    fontSize: "13px",
+    color: "#94A3B8",
   },
 };
-
-// Добавляем ключевые анимации через style-тег (можно вынести в CSS-файл)
-const styleSheet = document.createElement("style");
-styleSheet.textContent = `
-  @keyframes fadeInUp {
-    from {
-      opacity: 0;
-      transform: translateY(24px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-  @keyframes float {
-    0%, 100% { transform: translate(0, 0); }
-    50% { transform: translate(-20px, 20px); }
-  }
-`;
-document.head.appendChild(styleSheet);

@@ -14,15 +14,13 @@ export default function AuditForm() {
     check_date: new Date().toISOString().split("T")[0],
     employee_fio: "",
     employee_dept: "",
-    employee_center: "", // ✅ Центр сотрудника
+    employee_center: "",
   });
 
   const [empSuggestions, setEmpSuggestions] = useState<any[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedQuestions, setSelectedQuestions] = useState<number[]>([]);
-  const [answers, setAnswers] = useState<Record<number, "passed" | "failed">>(
-    {},
-  );
+  const [answers, setAnswers] = useState<Record<number, "passed" | "failed">>({});
 
   useEffect(() => {
     axios.get(API.meta).then((res) => setMeta(res.data));
@@ -44,7 +42,7 @@ export default function AuditForm() {
       ...form,
       employee_fio: emp.fio,
       employee_dept: emp.department,
-      employee_center: emp.center, // ✅ Автозаполнение центра
+      employee_center: emp.center,
     });
     setShowSuggestions(false);
   };
@@ -80,7 +78,6 @@ export default function AuditForm() {
     setLoading(true);
     setMsg("");
 
-    // Валидация
     if (selectedQuestions.length === 0) {
       setMsg("⚠️ Выберите хотя бы один вопрос для проверки");
       setLoading(false);
@@ -95,23 +92,19 @@ export default function AuditForm() {
     }
 
     try {
-      // 1. Гарантируем, что сотрудник в базе (с центром)
       await axios.post(API.empUpsert, {
         fio: form.employee_fio,
         department: form.employee_dept,
         center: form.employee_center,
       });
 
-      // 2. ✅ Явно конвертируем selected_question_ids в числа
       const questionIdsAsNumbers = selectedQuestions.map((id) => Number(id));
 
-      // 3. ✅ Конвертируем ключи ответов в СТРОКИ (JSON безопаснее со строковыми ключами)
       const answersWithStringKeys: Record<string, string> = {};
       Object.entries(answers).forEach(([key, value]) => {
         answersWithStringKeys[String(key)] = value;
       });
 
-      // 4. ✅ Формируем явный payload
       const payload = {
         auditor_fio: form.auditor_fio,
         auditor_dept: form.auditor_dept,
@@ -120,11 +113,10 @@ export default function AuditForm() {
         employee_fio: form.employee_fio,
         employee_dept: form.employee_dept,
         employee_center: form.employee_center,
-        selected_question_ids: questionIdsAsNumbers, // ✅ Числа
-        answers: answersWithStringKeys, // ✅ Строковые ключи
+        selected_question_ids: questionIdsAsNumbers,
+        answers: answersWithStringKeys,
       };
 
-      // 5. Отправляем сессию
       const response = await axios.post(API.sessions, payload);
 
       setMsg(
@@ -133,19 +125,15 @@ export default function AuditForm() {
       setSelectedQuestions([]);
       setAnswers({});
     } catch (err: any) {
-      // ✅ Подробное извлечение ошибки
       let errorMsg = "Неизвестная ошибка";
 
       if (err.response) {
-        // Сервер вернул ошибку (422, 500, и т.д.)
         const status = err.response.status;
         const data = err.response.data;
 
         if (status === 422) {
-          // Ошибка валидации — показываем детали
           const details = data.detail;
           if (Array.isArray(details)) {
-            // FastAPI возвращает массив ошибок валидации
             errorMsg = details
               .map((d: any) => `${d.loc.join(".")}: ${d.msg}`)
               .join("; ");
@@ -155,8 +143,7 @@ export default function AuditForm() {
             errorMsg = JSON.stringify(details);
           }
         } else {
-          errorMsg =
-            data?.detail || data?.message || `Ошибка сервера (${status})`;
+          errorMsg = data?.detail || data?.message || `Ошибка сервера (${status})`;
         }
       } else if (err.request) {
         errorMsg = "Нет ответа от сервера. Проверьте, запущен ли бэкенд.";
@@ -177,15 +164,9 @@ export default function AuditForm() {
   return (
     <div style={containerStyle}>
       <h2>📝 Новая проверка</h2>
-      {/* <a
-        href={API.export}
-        target="_blank"
-        rel="noopener noreferrer"
-        style={exportBtnStyle}>
-        📥 Excel
-      </a> */}
 
       <form onSubmit={handleSubmit} style={formStyle}>
+        {/* 👤 Аудитор */}
         <h4>👤 Аудитор</h4>
         <div style={gridStyle}>
           <input
@@ -199,24 +180,22 @@ export default function AuditForm() {
             value={form.auditor_dept}
             onChange={(e) => setForm({ ...form, auditor_dept: e.target.value })}
             required
-            style={inputStyle}>
+            style={inputStyle}
+          >
             <option value="">Департамент аудитора*</option>
             {meta.departments.map((d: string) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
+              <option key={d} value={d}>{d}</option>
             ))}
           </select>
           <select
             value={form.center}
             onChange={(e) => setForm({ ...form, center: e.target.value })}
             required
-            style={inputStyle}>
+            style={inputStyle}
+          >
             <option value="">Центр Полилаб*</option>
             {meta.centers.map((c: string) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
+              <option key={c} value={c}>{c}</option>
             ))}
           </select>
           <input
@@ -228,6 +207,7 @@ export default function AuditForm() {
           />
         </div>
 
+        {/* 🔍 Аудируемый */}
         <h4>🔍 Аудируемый</h4>
         <div style={{ position: "relative", marginBottom: 15 }}>
           <input
@@ -243,7 +223,8 @@ export default function AuditForm() {
                 <li
                   key={emp.id}
                   onClick={() => selectEmployee(emp)}
-                  style={suggestionItemStyle}>
+                  style={suggestionItemStyle}
+                >
                   {emp.fio}{" "}
                   <small style={{ color: "#666" }}>
                     ({emp.department}, {emp.center})
@@ -256,54 +237,43 @@ export default function AuditForm() {
         <div style={gridStyle}>
           <select
             value={form.employee_dept}
-            onChange={(e) =>
-              setForm({ ...form, employee_dept: e.target.value })
-            }
+            onChange={(e) => setForm({ ...form, employee_dept: e.target.value })}
             required
-            style={inputStyle}>
+            style={inputStyle}
+          >
             <option value="">Подразделение сотрудника*</option>
             {meta.departments.map((d: string) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
+              <option key={d} value={d}>{d}</option>
             ))}
           </select>
           <select
             value={form.employee_center}
-            onChange={(e) =>
-              setForm({ ...form, employee_center: e.target.value })
-            }
+            onChange={(e) => setForm({ ...form, employee_center: e.target.value })}
             required
-            style={inputStyle}>
+            style={inputStyle}
+          >
             <option value="">Центр Полилаб сотрудника*</option>
             {meta.centers.map((c: string) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
+              <option key={c} value={c}>{c}</option>
             ))}
           </select>
         </div>
 
+        {/* ❓ Вопросы */}
         <h4>Вопросы по списку:</h4>
-
-        {/* ✅ Кнопки управления вопросами */}
-        <div
-          style={{
-            marginBottom: 15,
-            display: "flex",
-            gap: 10,
-            alignItems: "center",
-          }}>
+        <div style={{ marginBottom: 15, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <button
             type="button"
             onClick={selectAllQuestions}
-            style={{ ...btnSmallStyle, background: "#17a2b8", color: "#fff" }}>
+            style={{ ...btnSmallStyle, background: "#17a2b8", color: "#fff" }}
+          >
             ✅ Выбрать все 17
           </button>
           <button
             type="button"
             onClick={clearAllQuestions}
-            style={{ ...btnSmallStyle, background: "#6c757d", color: "#fff" }}>
+            style={{ ...btnSmallStyle, background: "#6c757d", color: "#fff" }}
+          >
             ❌ Снять выбор
           </button>
           <span style={{ fontSize: 13, color: "#666" }}>
@@ -317,25 +287,24 @@ export default function AuditForm() {
               key={q.id}
               style={{
                 ...questionLabelStyle,
-                background: selectedQuestions.includes(q.id)
-                  ? "#e7f1ff"
-                  : "#fff",
-                border: selectedQuestions.includes(q.id)
-                  ? "2px solid #007bff"
-                  : "1px solid #ddd",
-              }}>
+                background: selectedQuestions.includes(q.id) ? "#e7f1ff" : "#fff",
+                border: selectedQuestions.includes(q.id) ? "2px solid #007bff" : "1px solid #ddd",
+              }}
+            >
               <input
                 type="checkbox"
                 checked={selectedQuestions.includes(q.id)}
                 onChange={() => toggleQuestion(q.id)}
+                style={{ flexShrink: 0 }}
               />
-              <span>
+              <span style={{ minWidth: 0, overflowWrap: "break-word" }}>
                 <b>#{q.num}</b> {q.text}
               </span>
             </label>
           ))}
         </div>
 
+        {/* 🎯 Результаты — ✅ ИСПРАВЛЕНО */}
         {selectedQuestions.length > 0 && (
           <div style={answersBoxStyle}>
             <h4>🎯 Результаты</h4>
@@ -343,35 +312,33 @@ export default function AuditForm() {
               const q = meta.questions.find((x: any) => x.id === qId);
               return (
                 <div key={qId} style={answerRowStyle}>
-                  <span>
-                    #{q.num} {q.text}
+                  {/* Текст вопроса — сжимается, переносится */}
+                  <span style={answerTextStyle}>
+                    <b>#{q.num}</b> {q.text}
                   </span>
-                  <div>
+                  
+                  {/* Кнопки — не сжимаются, всегда рядом */}
+                  <div style={answerButtonsStyle}>
                     <button
                       type="button"
-                      onClick={() =>
-                        setAnswers({ ...answers, [qId]: "passed" })
-                      }
+                      onClick={() => setAnswers({ ...answers, [qId]: "passed" })}
                       style={{
                         ...btnSmallStyle,
-                        background:
-                          answers[qId] === "passed" ? "#28a745" : "#e9ecef",
+                        background: answers[qId] === "passed" ? "#28a745" : "#e9ecef",
                         color: answers[qId] === "passed" ? "#fff" : "#333",
-                      }}>
+                      }}
+                    >
                       Сдал
                     </button>
                     <button
                       type="button"
-                      onClick={() =>
-                        setAnswers({ ...answers, [qId]: "failed" })
-                      }
+                      onClick={() => setAnswers({ ...answers, [qId]: "failed" })}
                       style={{
                         ...btnSmallStyle,
-                        background:
-                          answers[qId] === "failed" ? "#dc3545" : "#e9ecef",
+                        background: answers[qId] === "failed" ? "#dc3545" : "#e9ecef",
                         color: answers[qId] === "failed" ? "#fff" : "#333",
-                        marginLeft: 5,
-                      }}>
+                      }}
+                    >
                       Не сдал
                     </button>
                   </div>
@@ -381,26 +348,32 @@ export default function AuditForm() {
           </div>
         )}
 
+        {/* 💾 Кнопка сохранения */}
         <button
           type="submit"
           disabled={loading || selectedQuestions.length === 0}
           style={{
             ...submitBtnStyle,
             opacity: loading || selectedQuestions.length === 0 ? 0.6 : 1,
-          }}>
-          {loading ? "Сохранение..." : "💾 Сохранить сессию"}
+          }}
+        >
+          {loading ? "Сохранение..." : "💾 Сохранить результат"}
         </button>
+
+        {/* 📢 Сообщения */}
         {msg && (
           <p
             style={{
-              textAlign: "center" as const,
+              textAlign: "center",
               marginTop: 10,
               padding: 10,
               borderRadius: 4,
               background: msg.includes("✅") ? "#d4edda" : "#f8d7da",
               color: msg.includes("✅") ? "#155724" : "#721c24",
-              fontWeight: "bold" as const,
-            }}>
+              fontWeight: "bold",
+              margin: 0,
+            }}
+          >
             {msg}
           </p>
         )}
@@ -409,61 +382,76 @@ export default function AuditForm() {
   );
 }
 
-// ✅ СТИЛИ
+// ==================== СТИЛИ ====================
+
 const containerStyle: React.CSSProperties = {
   maxWidth: 900,
   margin: "0 auto",
   padding: 20,
 };
+
 const inputStyle: React.CSSProperties = {
   padding: "10px",
   borderRadius: 4,
   border: "1px solid #ccc",
-  boxSizing: "border-box" as const,
+  boxSizing: "border-box",
   width: "100%",
+  fontSize: "14px",
 };
+
 const formStyle: React.CSSProperties = {
   background: "#f8f9fa",
   padding: 20,
   borderRadius: 8,
 };
+
 const gridStyle: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "1fr 1fr",
   gap: 10,
   marginBottom: 15,
 };
+
 const suggestionsStyle: React.CSSProperties = {
-  position: "absolute" as const,
+  position: "absolute",
   background: "#fff",
   border: "1px solid #ddd",
   width: "100%",
   maxHeight: 150,
-  overflow: "auto" as const,
+  overflow: "auto",
   zIndex: 10,
   margin: 0,
   padding: 0,
-  listStyle: "none" as const,
+  listStyle: "none",
+  boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
 };
+
 const suggestionItemStyle: React.CSSProperties = {
   padding: 8,
-  cursor: "pointer" as const,
+  cursor: "pointer",
   borderBottom: "1px solid #eee",
+  fontSize: "14px",
 };
+
 const questionsGridStyle: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
   gap: 8,
   marginBottom: 20,
 };
+
 const questionLabelStyle: React.CSSProperties = {
   display: "flex",
-  alignItems: "center" as const,
+  alignItems: "center",
   gap: 8,
   padding: 10,
   borderRadius: 4,
-  cursor: "pointer" as const,
+  cursor: "pointer",
+  fontSize: "13px",
+  minHeight: "44px",
+  boxSizing: "border-box",
 };
+
 const answersBoxStyle: React.CSSProperties = {
   background: "#fff",
   padding: 15,
@@ -471,39 +459,56 @@ const answersBoxStyle: React.CSSProperties = {
   border: "1px solid #eee",
   marginBottom: 20,
 };
+
+// ✅ Строка ответа: текст + кнопки
 const answerRowStyle: React.CSSProperties = {
   display: "flex",
-  justifyContent: "space-between" as const,
-  alignItems: "center" as const,
-  marginBottom: 10,
+  alignItems: "flex-start",
+  gap: "16px",
+  marginBottom: "12px",
   padding: "8px 0",
   borderBottom: "1px solid #f0f0f0",
 };
-const btnSmallStyle: React.CSSProperties = {
-  padding: "8px 14px",
-  border: "none",
-  borderRadius: 4,
-  cursor: "pointer" as const,
-  fontSize: 13,
-  fontWeight: 500,
+
+// ✅ Текст вопроса: сжимается, переносится
+const answerTextStyle: React.CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  fontSize: "14px",
+  color: "#334155",
+  lineHeight: 1.4,
+  wordBreak: "normal",
+  overflowWrap: "break-word",
 };
+
+// ✅ Контейнер кнопок: не сжимается
+const answerButtonsStyle: React.CSSProperties = {
+  display: "flex",
+  gap: "8px",
+  flexShrink: 0,
+};
+
+// ✅ Кнопки: удобные, с переходом
+const btnSmallStyle: React.CSSProperties = {
+  padding: "8px 16px",
+  border: "none",
+  borderRadius: "6px",
+  cursor: "pointer",
+  fontSize: "13px",
+  fontWeight: 500,
+  whiteSpace: "nowrap",
+  transition: "background 120ms ease, transform 50ms ease",
+};
+
 const submitBtnStyle: React.CSSProperties = {
   padding: "14px 24px",
   border: "none",
-  borderRadius: 4,
-  cursor: "pointer" as const,
+  borderRadius: 6,
+  cursor: "pointer",
   color: "#fff",
   background: "#007bff",
-  fontSize: 16,
-  width: "100%",
-};
-const exportBtnStyle: React.CSSProperties = {
-  float: "right" as const,
-  background: "#107c41",
-  color: "#fff",
-  padding: "10px 18px",
-  textDecoration: "none",
-  borderRadius: 4,
-  fontSize: 14,
+  fontSize: "16px",
   fontWeight: 500,
+  width: "100%",
+  transition: "background 120ms ease",
 };

@@ -29,43 +29,49 @@ export default function MainLayout() {
     setOpenGroups((prev) => ({ ...prev, [title]: !prev[title] }));
   };
 
-  // Автоматически вычисляет "корень" раздела: /otipb/audit → /otipb, /lab/booking → /lab
   const getModulePrefix = (path: string): string => {
-  const parts = path.split('/').filter(Boolean);
-  return parts.length >= 2 ? `/${parts[0]}` : path;
+    const parts = path.split('/').filter(Boolean);
+    return parts.length >= 2 ? `/${parts[0]}` : path;
   };
 
-  // Проверяет активность пункта меню
   const isMenuItemActive = (itemPath: string, currentPath: string): boolean => {
-  const prefix = getModulePrefix(itemPath);
-  // Если префикс корневой "/", требуем точного совпадения (чтобы не светилось всё)
-  if (prefix === '/') return currentPath === itemPath;
-
-  return currentPath === itemPath || currentPath.startsWith(`${prefix}/`);
+    const prefix = getModulePrefix(itemPath);
+    if (prefix === '/') return currentPath === itemPath;
+    return currentPath === itemPath || currentPath.startsWith(`${prefix}/`);
   };
 
   return (
     <div style={styles.layout}>
-      {/* Боковое меню — всегда видимо */}
+      
+      {/* ═══════════════════════════════════════════
+          САЙДБАР: fixed, всегда виден, не скроллится
+          ═══════════════════════════════════════════ */}
       <aside style={styles.sidebar}>
-        <div style={styles.logo}>Polylab</div>
         
+        {/* Логотип */}
+        <div style={styles.logo}>
+          <span style={styles.logoText}>Цифровые помощники</span>
+        </div>
+
+        {/* Навигация — без внутреннего скролла */}
         <nav style={styles.nav}>
           {menuTree.map((group) => {
             const isOpen = openGroups[group.title];
-            
             return (
-              <div key={group.title} style={styles.groupBlock}>
+              <div key={group.title} style={styles.group}>
                 <button
                   onClick={() => toggleGroup(group.title)}
-                  style={styles.groupHeader}
+                  style={styles.groupBtn}
+                  type="button"
                 >
-                  <span style={styles.groupTitle}>{group.title}</span>
-                  <span style={styles.groupToggle}>{isOpen ? "−" : "+"}</span>
+                  <span style={styles.groupName}>{group.title}</span>
+                  <span style={styles.groupArrow}>
+                    {isOpen ? "▴" : "▾"}
+                  </span>
                 </button>
 
                 {isOpen && (
-                  <ul style={styles.itemsList}>
+                  <ul style={styles.menuList}>
                     {group.items.map((item) => {
                       const isActive = isMenuItemActive(item.path, location.pathname);
                       return (
@@ -73,10 +79,8 @@ export default function MainLayout() {
                           <Link
                             to={item.path}
                             style={{
-                              ...styles.itemLink,
-                              background: isActive ? "#008B92" : "transparent",
-                              color: isActive ? "#fff" : "#334155",
-                              borderLeft: isActive ? "3px solid #006B6B" : "3px solid transparent",
+                              ...styles.menuItem,
+                              ...(isActive && styles.menuItemActive),
                             }}
                           >
                             {item.label}
@@ -90,114 +94,182 @@ export default function MainLayout() {
             );
           })}
         </nav>
-      </aside>
-          
-      {/* Основной контент */}
-      <main style={styles.main}>
-        {/* <header style={styles.header}>
-          <h1 style={styles.pageTitle}>
-            {title}
-          </h1>
-        </header> */}
-        
-        <div style={styles.content}>
-          <Outlet />
+
+        {/* Футер сайдбара */}
+        <div style={styles.sidebarFooter}>
+          <span style={styles.version}>v1.0.0</span>
         </div>
+      </aside>
+
+      {/* ═══════════════════════════════════════════
+          КОНТЕНТ: сдвинут вправо, скроллится естественно
+          ═══════════════════════════════════════════ */}
+      <main style={styles.main}>
+        <Outlet />
       </main>
+      
     </div>
   );
 }
 
+// ==================== DESIGN TOKENS ====================
+const C = {
+  primary: "#008B92",
+  primaryDark: "#006B6B", 
+  primaryBg: "#E6F7F8",
+  bg: "#F8FAFC",
+  surface: "#FFFFFF",
+  border: "#E2E8F0",
+  text: "#0F172A",
+  textMuted: "#475569",
+  textLight: "#64748B",
+};
+
+const T = {
+  font: "'Inter', -apple-system, 'Segoe UI', Roboto, sans-serif",
+  size: {
+    xs: "12px",
+    sm: "14px", 
+    base: "15px",
+    lg: "18px",
+    xl: "24px",
+    "2xl": "36px",
+  },
+  weight: { normal: 400, medium: 500, semibold: 600, bold: 700 },
+};
+
+const S = {
+  xs: "4px", sm: "8px", md: "12px", lg: "16px",
+  xl: "20px", "2xl": "24px", "3xl": "32px", "4xl": "40px",
+};
+
+// ==================== СТИЛИ ====================
 const styles: Record<string, React.CSSProperties> = {
+  
+  // ─── ГЛАВНЫЙ КОНТЕЙНЕР ─────────────────────────
   layout: {
     display: "flex",
     minHeight: "100vh",
-    background: "#F8FAFC",
-    fontFamily: "system-ui, -apple-system, sans-serif",
+    background: C.bg,
+    fontFamily: T.font,
+    color: C.text,
+    WebkitFontSmoothing: "antialiased",
+    // ✅ Убрали overflow: hidden — пусть браузер управляет скроллом
   },
+
+  // ─── САЙДБАР (FIXED) ───────────────────────────
   sidebar: {
-    width: "260px",
-    height: "100vh",
-    background: "#fff",
-    borderRight: "1px solid #E2E8F0",
+    position: "fixed",     // ✅ Фиксирован относительно окна
+    left: 0,
+    top: 0,
+    width: "320px",
+    height: "100vh",       // ✅ На всю высоту окна
+    background: C.surface,
+    borderRight: `1px solid ${C.border}`,
     display: "flex",
     flexDirection: "column",
-    position: "sticky",
-    top: 0,
-    flexShrink: 0,
+    zIndex: 10,            // ✅ Поверх контента
+    // ✅ НЕТ overflow: auto — скролл только на странице
   },
+
   logo: {
-    padding: "16px 20px",
-    fontSize: "16px",
-    fontWeight: 600,
-    color: "#008B92",
-    borderBottom: "1px solid #E2E8F0",
+    display: "flex",
+    alignItems: "center",
+    padding: `${S.lg} ${S["2xl"]}`,
+    borderBottom: `1px solid ${C.border}`,
+    height: "64px",
+    boxSizing: "border-box",
   },
+
+  logoText: {
+    fontSize: T.size.lg,
+    fontWeight: T.weight.semibold,
+    color: C.text,
+    letterSpacing: "-0.02em",
+  },
+
   nav: {
     flex: 1,
-    padding: "8px 0",
-    overflowY: "auto",
+    padding: `${S.md} 0`,
+    // ✅ Убрали overflowY: auto — меню не скроллится отдельно
   },
-  groupBlock: { marginBottom: "4px" },
-  groupHeader: {
+
+  group: { marginBottom: S.xs },
+
+  groupBtn: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     width: "100%",
-    padding: "10px 20px",
+    padding: `${S.sm} ${S["2xl"]}`,
     background: "none",
     border: "none",
     cursor: "pointer",
     textAlign: "left",
   },
-  groupTitle: {
-    fontSize: "11px",
-    fontWeight: 600,
-    color: "#64748B",
+
+  groupName: {
+    fontSize: T.size.xs,
+    fontWeight: T.weight.semibold,
+    color: C.textLight,
     textTransform: "uppercase",
-    letterSpacing: "0.5px",
+    letterSpacing: "0.08em",
   },
-  groupToggle: {
+
+  groupArrow: {
     fontSize: "14px",
-    color: "#94A3B8",
-    width: "20px",
+    color: C.textLight,
+    width: "24px",
     textAlign: "center",
+    lineHeight: 1,
   },
-  itemsList: {
+
+  menuList: {
     listStyle: "none",
-    margin: "0",
-    padding: "4px 0",
+    margin: 0,
+    padding: 0,
   },
-  itemLink: {
+
+  menuItem: {
     display: "block",
-    padding: "8px 20px",
-    fontSize: "13px",
-    fontWeight: 500,
+    padding: `${S.sm} ${S["2xl"]}`,
+    fontSize: T.size.sm,
+    fontWeight: T.weight.medium,
+    color: C.textMuted,
     textDecoration: "none",
-    transition: "background 0.1s, color 0.1s, border-color 0.1s",
+    transition: "background 120ms ease, color 120ms ease",
+    borderLeft: "3px solid transparent",
+    paddingLeft: `calc(${S["2xl"]} - 3px)`,
   },
-  main: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
-    overflow: "auto",
+
+  menuItemActive: {
+    background: C.primaryBg,
+    color: C.primaryDark,
+    borderLeftColor: C.primary,
+    fontWeight: T.weight.semibold,
   },
-  header: {
-    padding: "14px 24px",
-    background: "#fff",
-    borderBottom: "1px solid #E2E8F0",
+
+  sidebarFooter: {
+    padding: `${S.md} ${S["2xl"]}`,
+    borderTop: `1px solid ${C.border}`,
+    background: C.bg,
+    height: "48px",
     display: "flex",
     alignItems: "center",
+    boxSizing: "border-box",
   },
-  pageTitle: {
-    margin: 0,
-    fontSize: "17px",
-    fontWeight: 600,
-    color: "#0F172A",
+
+  version: {
+    fontSize: T.size.xs,
+    color: C.textLight,
   },
-  content: {
+
+  // ─── ОСНОВНОЙ КОНТЕНТ ──────────────────────────
+  main: {
     flex: 1,
-    padding: "20px 24px",
-    overflow: "auto",
+    marginLeft: "320px",   // ✅ Сдвиг на ширину сайдбара
+    padding: `${S["4xl"]} ${S["3xl"]}`,
+    // ✅ НЕТ overflow: auto — скролл управляется браузером естественно
+    minWidth: 0,
   },
 };

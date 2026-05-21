@@ -3,7 +3,7 @@ import axios from "axios";
 import { API } from "../../../config";
 
 interface HistoryItem {
-  id: number;
+  id: string;
   auditor_fio: string;
   center: string;
   check_date: string;
@@ -21,6 +21,7 @@ export default function History() {
   const [data, setData] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // ✅ ОДИН стейт для фильтров — больше никакого appliedFilters
   const [filters, setFilters] = useState({
     auditor_fio: "",
     date_from: "",
@@ -29,12 +30,12 @@ export default function History() {
     center: "",
     quarter: "",
   });
-  const [appliedFilters, setAppliedFilters] = useState(filters);
 
-  const fetchData = async () => {
+  // ✅ Функция загрузки принимает фильтры как аргумент
+  const fetchData = async (filtersToUse: typeof filters) => {
     setLoading(true);
     const params = new URLSearchParams();
-    Object.entries(appliedFilters).forEach(([k, v]) => {
+    Object.entries(filtersToUse).forEach(([k, v]) => {
       if (v) params.append(k, v);
     });
 
@@ -48,15 +49,17 @@ export default function History() {
     }
   };
 
+  // Загрузка при первом рендере
   useEffect(() => {
-    fetchData();
+    fetchData(filters);
   }, []);
 
+  // ✅ Применяем фильтры: передаём текущее значение напрямую
   const applyFilters = () => {
-    setAppliedFilters({ ...filters });
-    fetchData();
+    fetchData(filters);
   };
 
+  // ✅ Сброс: очищаем стейт и сразу загружаем с пустыми фильтрами
   const resetFilters = () => {
     const empty = {
       auditor_fio: "",
@@ -67,49 +70,54 @@ export default function History() {
       quarter: "",
     };
     setFilters(empty);
-    setAppliedFilters(empty);
-    fetchData();
+    fetchData(empty);
+  };
+
+  // ✅ Формируем query-параметры для Excel на основе текущих фильтров
+  const getExportUrl = () => {
+    const params = new URLSearchParams(
+      Object.fromEntries(
+        Object.entries(filters).filter(([_, v]) => v)
+      )
+    );
+    return `${API.export}?${params}`;
   };
 
   return (
     <div style={pageContainer}>
-      <h2>📋 История проверок</h2>
-      <a href={`${API.export}?${new URLSearchParams(
-      Object.fromEntries(
-        Object.entries(appliedFilters).filter(([_, v]) => v)
-      )
-    )}`}
-    target="_blank"
-    rel="noopener noreferrer"
-    style={{
-      background: "#107c41",
-      color: "#fff",
-      padding: "10px 18px",
-      textDecoration: "none",
-      borderRadius: 6,
-      fontSize: 14,
-      fontWeight: 500,
-      display: "inline-flex",
-      alignItems: "center",
-      gap: 6,
-    }}>
-    📥 Выгрузить Excel
-  </a>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 15 }}>
+        <h2>📋 История проверок</h2>
+        <a
+          href={getExportUrl()}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            background: "#107c41",
+            color: "#fff",
+            padding: "10px 18px",
+            textDecoration: "none",
+            borderRadius: 6,
+            fontSize: 14,
+            fontWeight: 500,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+          }}>
+          📥 Выгрузить Excel
+        </a>
+      </div>
+
       <div style={filtersPanel}>
         <input
           placeholder="Аудитор"
           value={filters.auditor_fio}
-          onChange={(e) =>
-            setFilters({ ...filters, auditor_fio: e.target.value })
-          }
+          onChange={(e) => setFilters({ ...filters, auditor_fio: e.target.value })}
           style={inputStyle}
         />
         <input
           type="date"
           value={filters.date_from}
-          onChange={(e) =>
-            setFilters({ ...filters, date_from: e.target.value })
-          }
+          onChange={(e) => setFilters({ ...filters, date_from: e.target.value })}
           style={inputStyle}
         />
         <input
@@ -125,7 +133,6 @@ export default function History() {
           <option value="">Все статусы</option>
           <option value="В процессе">В процессе</option>
           <option value="Сдан">Сдан</option>
-          {/* ✅ Убрали "Не сдан" */}
         </select>
         <select
           value={filters.center}
@@ -133,18 +140,10 @@ export default function History() {
           style={inputStyle}>
           <option value="">Все центры</option>
           {[
-            "Казань",
-            "Москва",
-            "Пермь",
-            "Всеволожск",
-            "Красноярск",
-            "Нижнекамск",
-            "Нижний Новгород",
-            "Воронеж",
+            "Казань", "Москва", "Пермь", "Всеволожск",
+            "Красноярск", "Нижнекамск", "Нижний Новгород", "Воронеж",
           ].map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
+            <option key={c} value={c}>{c}</option>
           ))}
         </select>
         <input
@@ -154,14 +153,10 @@ export default function History() {
           style={inputStyle}
         />
         <div style={{ display: "flex", gap: 10, gridColumn: "span 2" }}>
-          <button
-            onClick={applyFilters}
-            style={{ ...btnStyle, background: "#007bff", flex: 1 }}>
+          <button onClick={applyFilters} style={{ ...btnStyle, background: "#007bff", flex: 1 }}>
             🔍 Применить
           </button>
-          <button
-            onClick={resetFilters}
-            style={{ ...btnStyle, background: "#6c757d" }}>
+          <button onClick={resetFilters} style={{ ...btnStyle, background: "#6c757d" }}>
             🔄 Сброс
           </button>
         </div>
@@ -199,30 +194,20 @@ export default function History() {
                   </td>
                   <td style={tdStyle}>
                     {row.questions_asked.map((n: number) => (
-                      <span key={n} style={badgeStyle}>
-                        #{n}
-                      </span>
+                      <span key={n} style={badgeStyle}>#{n}</span>
                     ))}
                     <div style={sessionStats}>
                       +{row.total_passed} / -{row.total_failed}
                     </div>
                   </td>
-                  <td
-                    style={{
-                      ...tdStyle,
-                      fontWeight: "bold" as const,
-                      color:
-                        row.session_status === "Сдан" ? "#28a745" : "#007bff",
-                    }}>
+                  <td style={{ ...tdStyle, fontWeight: "bold", color: row.session_status === "Сдан" ? "#28a745" : "#007bff" }}>
                     {row.session_status}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {data.length === 0 && (
-            <p style={emptyText}>🔍 Нет данных для отображения</p>
-          )}
+          {data.length === 0 && <p style={emptyText}>🔍 Нет данных для отображения</p>}
         </div>
       )}
     </div>

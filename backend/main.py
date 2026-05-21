@@ -15,6 +15,7 @@ import json
 from enum import Enum as PyEnum
 import logging
 import os
+import uuid
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO,
@@ -131,7 +132,7 @@ class Question(Base):
 
 class AuditSession(Base):
     __tablename__ = "audit_sessions"
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
     auditor_fio = Column(String, index=True)
     auditor_dept = Column(String)
     center = Column(String, index=True)
@@ -148,7 +149,7 @@ class AuditSession(Base):
 class AuditAnswer(Base):
     __tablename__ = "audit_answers"
     id = Column(Integer, primary_key=True, index=True)
-    session_id = Column(Integer, ForeignKey("audit_sessions.id"))
+    session_id = Column(String, ForeignKey("audit_sessions.id"), index=True)
     question_id = Column(Integer, ForeignKey("questions.id"))
     result = Column(String)
 
@@ -447,7 +448,7 @@ def get_history(
         passed = sum(1 for a in s.answers if a.result == 'passed')
         failed = sum(1 for a in s.answers if a.result == 'failed')
         result.append({
-            "id": s.id,
+            "id": str(s.id),
             "auditor_fio": s.auditor_fio,
             "center": s.center,
             "check_date": s.check_date,
@@ -545,7 +546,7 @@ def export_excel(
                 "Статус": status_ru,
                 "Кто провел БП ФИО": s.auditor_fio,
                 "Подразделение проводившего": s.auditor_dept,
-                "ID_проверки": s.id,
+                "ID_проверки": str(s.id),
             })
 
     df = pd.DataFrame(rows, columns=[
