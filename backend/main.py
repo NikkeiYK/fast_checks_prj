@@ -41,14 +41,39 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 app = FastAPI(title="Polilab Audit System v2")
 
-# CORS для Vite
+
+def get_cors_origins() -> list[str]:
+    """Получает список разрешённых origin из переменной окружения"""
+    # По умолчанию — только локальная разработка
+    default_origins = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",  # если используете Create React App
+    ]
+    
+    # Переменная AMVERA_CORS_ORIGINS содержит домены через запятую
+    # Пример: "https://polilab.amvera.io,https://polilab-backend.amvera.io"
+    env_origins = os.environ.get("AMVERA_CORS_ORIGINS", "")
+    
+    if env_origins:
+        # Разбиваем по запятой, убираем пробелы, фильтруем пустые
+        custom_origins = [o.strip() for o in env_origins.split(",") if o.strip()]
+        return list(set(default_origins + custom_origins))  # объединяем без дублей
+    
+    return default_origins
+
+
+# Применяем CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=get_cors_origins(),  # ✅ Динамический список
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"], 
 )
+
+# 🔍 Логирование для отладки (удалите в продакшене)
+logger.info(f"🔐 CORS разрешены для: {get_cors_origins()}")
 
 # =============================================================================
 # СПРАВОЧНИКИ

@@ -4,5 +4,5 @@ pydantic
 sqlalchemy
 pandas
 openpyxl
-python-jose[cryptography]
-passlib[bcrypt]
+python-jose
+passlib
