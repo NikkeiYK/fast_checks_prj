@@ -48,7 +48,9 @@ def get_cors_origins() -> list[str]:
     default_origins = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
-        "http://localhost:3000",  # если используете Create React App
+        "http://localhost:3000",
+        "https://platform-frontend-polylab.amvera.io",
+        "*"# если используете Create React App
     ]
     
     # Переменная AMVERA_CORS_ORIGINS содержит домены через запятую
@@ -597,5 +599,5 @@ def export_excel(
 
 if __name__ == "__main__":
     import uvicorn
-    logger.info("🚀 Запуск сервера на http://127.0.0.1:8000")
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    logger.info("🚀 Запуск сервера на http://0.0.0.0:8000")
+    uvicorn.run(app, host="0.0.0.0", port=8000)

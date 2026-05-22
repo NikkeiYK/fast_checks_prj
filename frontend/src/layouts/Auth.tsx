@@ -47,7 +47,7 @@ export default function LoginForm() {
   return (
     <div style={styles.container}>
       <form onSubmit={handleSubmit} style={styles.form}>
-        <h2 style={styles.title}>🔐 Polilab Audit</h2>
+        <h2 style={styles.title}>🔐 Цифровые помощники</h2>
         
         <div style={styles.field}>
           <label>Логин</label>
@@ -57,7 +57,7 @@ export default function LoginForm() {
             onChange={(e) => setUsername(e.target.value)}
             style={styles.input}
             disabled={loading}
-            autoComplete="username"
+            autoComplete="Логин"
           />
         </div>
 
@@ -69,7 +69,7 @@ export default function LoginForm() {
             onChange={(e) => setPassword(e.target.value)}
             style={styles.input}
             disabled={loading}
-            autoComplete="current-password"
+            autoComplete="Текущий пароль"
           />
         </div>
 
@@ -78,10 +78,6 @@ export default function LoginForm() {
         <button type="submit" style={styles.button} disabled={loading}>
           {loading ? "Вход..." : "Войти"}
         </button>
-
-        <div style={styles.hint}>
-          <small>Сервисная учетка: <b>polylab / 2026</b></small>
-        </div>
       </form>
     </div>
   );
