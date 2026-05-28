@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+// src/modules/otipb/components/AuditForm.tsx
+import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { API } from "../../../config";
 
@@ -17,34 +18,98 @@ export default function AuditForm() {
     employee_center: "",
   });
 
+  // 🔹 Состояния для автокомплита сотрудника
   const [empSuggestions, setEmpSuggestions] = useState<any[]>([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [showEmpSuggestions, setShowEmpSuggestions] = useState(false);
+
+  // 🔹 Состояния для автокомплита аудитора (НОВОЕ)
+  const [auditorSuggestions, setAuditorSuggestions] = useState<any[]>([]);
+  const [showAuditorSuggestions, setShowAuditorSuggestions] = useState(false);
+
   const [selectedQuestions, setSelectedQuestions] = useState<number[]>([]);
   const [answers, setAnswers] = useState<Record<number, "passed" | "failed">>({});
+
+  // 🔹 Ref для закрытия подсказок при клике вне
+  const auditorInputRef = useRef<HTMLDivElement>(null);
+  const empInputRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     axios.get(API.meta).then((res) => setMeta(res.data));
   }, []);
 
-  const handleEmpChange = async (val: string) => {
-    setForm({ ...form, employee_fio: val });
+  // 🔹 Закрытие подсказок при клике вне полей
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (auditorInputRef.current && !auditorInputRef.current.contains(event.target as Node)) {
+        setShowAuditorSuggestions(false);
+      }
+      if (empInputRef.current && !empInputRef.current.contains(event.target as Node)) {
+        setShowEmpSuggestions(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // 🔹 Обработчик ввода ФИО аудитора
+  const handleAuditorChange = async (val: string) => {
+    setForm({ ...form, auditor_fio: val });
     if (val.length > 2) {
-      const res = await axios.post(API.empSearch, { query: val });
-      setEmpSuggestions(res.data);
-      setShowSuggestions(true);
+      try {
+        const res = await axios.post(API.empSearch, { query: val });
+        setAuditorSuggestions(res.data);
+        setShowAuditorSuggestions(true);
+      } catch (err) {
+        console.error("❌ Auditor search error:", err);
+        setAuditorSuggestions([]);
+      }
     } else {
-      setShowSuggestions(false);
+      setShowAuditorSuggestions(false);
+      setAuditorSuggestions([]);
     }
   };
 
+  // 🔹 Выбор аудитора из подсказок
+  const selectAuditor = (emp: any) => {
+    setForm({
+      ...form,
+      auditor_fio: emp.fio,
+      auditor_dept: emp.department,
+      center: emp.center, // авто-центр = центр аудитора
+    });
+    setShowAuditorSuggestions(false);
+    setAuditorSuggestions([]);
+  };
+
+  // 🔹 Обработчик ввода ФИО сотрудника (без изменений)
+  const handleEmpChange = async (val: string) => {
+    setForm({ ...form, employee_fio: val });
+    if (val.length > 2) {
+      try {
+        const res = await axios.post(API.empSearch, { query: val });
+        setEmpSuggestions(res.data);
+        setShowEmpSuggestions(true);
+      } catch (err) {
+        console.error("❌ Employee search error:", err);
+        setEmpSuggestions([]);
+      }
+    } else {
+      setShowEmpSuggestions(false);
+      setEmpSuggestions([]);
+    }
+  };
+
+  // 🔹 Выбор сотрудника из подсказок (без изменений)
   const selectEmployee = (emp: any) => {
     setForm({
       ...form,
       employee_fio: emp.fio,
       employee_dept: emp.department,
       employee_center: emp.center,
+      center: emp.center, // автоцентр аудита = центр сотрудника
     });
-    setShowSuggestions(false);
+    setShowEmpSuggestions(false);
+    setEmpSuggestions([]);
   };
 
   const toggleQuestion = (qId: number) => {
@@ -59,6 +124,7 @@ export default function AuditForm() {
   };
 
   const selectAllQuestions = () => {
+    if (!meta) return;
     const allIds = meta.questions.map((q: any) => q.id);
     setSelectedQuestions(allIds);
     const newAnswers: Record<number, "passed" | "failed"> = {};
@@ -84,6 +150,12 @@ export default function AuditForm() {
       return;
     }
 
+    if (selectedQuestions.length < 17) {
+      setMsg("⚠️ Вам необходимо провести полный опрос");
+      setLoading(false);
+      return;
+    }
+
     const unanswered = selectedQuestions.filter((qId) => !answers[qId]);
     if (unanswered.length > 0) {
       setMsg(`⚠️ Не указан результат для вопросов: ${unanswered.join(", ")}`);
@@ -91,13 +163,14 @@ export default function AuditForm() {
       return;
     }
 
-    try {
-      await axios.post(API.empUpsert, {
-        fio: form.employee_fio,
-        department: form.employee_dept,
-        center: form.employee_center,
-      });
+    // 🔹 Валидация: аудитор должен быть из справочника
+    if (!form.auditor_dept || !form.center) {
+      setMsg("⚠️ Выберите аудитора из справочника (не вводите вручную)");
+      setLoading(false);
+      return;
+    }
 
+    try {
       const questionIdsAsNumbers = selectedQuestions.map((id) => Number(id));
 
       const answersWithStringKeys: Record<string, string> = {};
@@ -120,7 +193,7 @@ export default function AuditForm() {
       const response = await axios.post(API.sessions, payload);
 
       setMsg(
-        `✅ Сессия сохранена! Вопросы: ${selectedQuestions.join(", ")}. Статус: ${response.data.global_status}`,
+        `✅ Сессия сохранена! Вопросы: ${selectedQuestions.join(", ")}. Статус: ${response.data.global_status}`
       );
       setSelectedQuestions([]);
       setAnswers({});
@@ -153,7 +226,6 @@ export default function AuditForm() {
 
       setMsg(`❌ Ошибка: ${errorMsg}`);
       console.error("Full error:", err);
-      console.error("Response data:", err.response?.data);
     } finally {
       setLoading(false);
     }
@@ -166,62 +238,84 @@ export default function AuditForm() {
       <h2>📝 Новая проверка</h2>
 
       <form onSubmit={handleSubmit} style={formStyle}>
-        {/* 👤 Аудитор */}
-        <h4>👤 Аудитор</h4>
-        <div style={gridStyle}>
+        {/* 👤 Аудитор (с автокомплитом) */}
+        <h4>👤 Аудитор (выберите из справочника)</h4>
+        
+        {/* Поле ФИО аудитора с подсказками */}
+        <div ref={auditorInputRef} style={{ position: "relative", marginBottom: 15 }}>
           <input
-            placeholder="ФИО Аудитора*"
+            placeholder="ФИО Аудитора* (начните вводить)"
             required
             value={form.auditor_fio}
-            onChange={(e) => setForm({ ...form, auditor_fio: e.target.value })}
+            onChange={(e) => handleAuditorChange(e.target.value)}
             style={inputStyle}
+            autoComplete="off"
           />
-          <select
-            value={form.auditor_dept}
-            onChange={(e) => setForm({ ...form, auditor_dept: e.target.value })}
-            required
-            style={inputStyle}
-          >
-            <option value="">Департамент аудитора*</option>
-            {meta.departments.map((d: string) => (
-              <option key={d} value={d}>{d}</option>
-            ))}
-          </select>
-          <select
-            value={form.center}
-            onChange={(e) => setForm({ ...form, center: e.target.value })}
-            required
-            style={inputStyle}
-          >
-            <option value="">Центр Полилаб*</option>
-            {meta.centers.map((c: string) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-          <input
-            type="date"
-            value={form.check_date}
-            onChange={(e) => setForm({ ...form, check_date: e.target.value })}
-            required
-            style={inputStyle}
-          />
+          {showAuditorSuggestions && auditorSuggestions.length > 0 && (
+            <ul style={suggestionsStyle}>
+              {auditorSuggestions.map((emp: any) => (
+                <li
+                  key={`aud-${emp.id}`}
+                  onClick={() => selectAuditor(emp)}
+                  style={suggestionItemStyle}
+                >
+                  {emp.fio}{" "}
+                  <small style={{ color: "#666" }}>
+                    ({emp.department}, {emp.center})
+                  </small>
+                </li>
+              ))}
+            </ul>
+          )}
+          {showAuditorSuggestions && form.auditor_fio.length > 2 && auditorSuggestions.length === 0 && (
+            <div style={noResultsStyle}>Не найдено в справочнике</div>
+          )}
         </div>
 
-        {/* 🔍 Аудируемый */}
+        {/* Автозаполняемые поля отдела и центра */}
+        <div style={gridStyle}>
+          <input
+            placeholder="Подразделение (авто)"
+            readOnly
+            required
+            value={form.auditor_dept}
+            style={{ ...inputStyle, background: "#f1f3f5", cursor: "not-allowed" }}
+            title="Выберите аудитора из справочника"
+          />
+          <input
+            placeholder="Центр (авто)"
+            readOnly
+            required
+            value={form.center}
+            style={{ ...inputStyle, background: "#f1f3f5", cursor: "not-allowed" }}
+            title="Выберите аудитора из справочника"
+          />
+        </div>
+        
+        <input
+          type="date"
+          value={form.check_date}
+          onChange={(e) => setForm({ ...form, check_date: e.target.value })}
+          required
+          style={{ ...inputStyle, marginBottom: 15 }}
+        />
+
+        {/* 🔍 Аудируемый (без изменений) */}
         <h4>🔍 Аудируемый</h4>
-        <div style={{ position: "relative", marginBottom: 15 }}>
+        <div ref={empInputRef} style={{ position: "relative", marginBottom: 15 }}>
           <input
             placeholder="ФИО Сотрудника (начните вводить)*"
             required
             value={form.employee_fio}
             onChange={(e) => handleEmpChange(e.target.value)}
             style={inputStyle}
+            autoComplete="off"
           />
-          {showSuggestions && empSuggestions.length > 0 && (
+          {showEmpSuggestions && empSuggestions.length > 0 && (
             <ul style={suggestionsStyle}>
               {empSuggestions.map((emp: any) => (
                 <li
-                  key={emp.id}
+                  key={`emp-${emp.id}`}
                   onClick={() => selectEmployee(emp)}
                   style={suggestionItemStyle}
                 >
@@ -235,33 +329,33 @@ export default function AuditForm() {
           )}
         </div>
         <div style={gridStyle}>
-          <select
+          <input
+            placeholder="Подразделение (автозаполнение)"
+            readOnly
+            required
             value={form.employee_dept}
-            onChange={(e) => setForm({ ...form, employee_dept: e.target.value })}
+            style={{ ...inputStyle, background: "#f1f3f5" }}
+          />
+          <input
+            placeholder="Центр сотрудника (автозаполнение)"
+            readOnly
             required
-            style={inputStyle}
-          >
-            <option value="">Подразделение сотрудника*</option>
-            {meta.departments.map((d: string) => (
-              <option key={d} value={d}>{d}</option>
-            ))}
-          </select>
-          <select
             value={form.employee_center}
-            onChange={(e) => setForm({ ...form, employee_center: e.target.value })}
-            required
-            style={inputStyle}
-          >
-            <option value="">Центр Полилаб сотрудника*</option>
-            {meta.centers.map((c: string) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
+            style={{ ...inputStyle, background: "#f1f3f5" }}
+          />
         </div>
 
-        {/* ❓ Вопросы */}
+        {/* ❓ Вопросы (без изменений) */}
         <h4>Вопросы по списку:</h4>
-        <div style={{ marginBottom: 15, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <div
+          style={{
+            marginBottom: 15,
+            display: "flex",
+            gap: 10,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
           <button
             type="button"
             onClick={selectAllQuestions}
@@ -287,8 +381,12 @@ export default function AuditForm() {
               key={q.id}
               style={{
                 ...questionLabelStyle,
-                background: selectedQuestions.includes(q.id) ? "#e7f1ff" : "#fff",
-                border: selectedQuestions.includes(q.id) ? "2px solid #007bff" : "1px solid #ddd",
+                background: selectedQuestions.includes(q.id)
+                  ? "#e7f1ff"
+                  : "#fff",
+                border: selectedQuestions.includes(q.id)
+                  ? "2px solid #007bff"
+                  : "1px solid #ddd",
               }}
             >
               <input
@@ -304,7 +402,7 @@ export default function AuditForm() {
           ))}
         </div>
 
-        {/* 🎯 Результаты — ✅ ИСПРАВЛЕНО */}
+        {/* 🎯 Результаты (без изменений) */}
         {selectedQuestions.length > 0 && (
           <div style={answersBoxStyle}>
             <h4>🎯 Результаты</h4>
@@ -312,19 +410,19 @@ export default function AuditForm() {
               const q = meta.questions.find((x: any) => x.id === qId);
               return (
                 <div key={qId} style={answerRowStyle}>
-                  {/* Текст вопроса — сжимается, переносится */}
                   <span style={answerTextStyle}>
                     <b>#{q.num}</b> {q.text}
                   </span>
-                  
-                  {/* Кнопки — не сжимаются, всегда рядом */}
                   <div style={answerButtonsStyle}>
                     <button
                       type="button"
-                      onClick={() => setAnswers({ ...answers, [qId]: "passed" })}
+                      onClick={() =>
+                        setAnswers({ ...answers, [qId]: "passed" })
+                      }
                       style={{
                         ...btnSmallStyle,
-                        background: answers[qId] === "passed" ? "#28a745" : "#e9ecef",
+                        background:
+                          answers[qId] === "passed" ? "#28a745" : "#e9ecef",
                         color: answers[qId] === "passed" ? "#fff" : "#333",
                       }}
                     >
@@ -332,10 +430,13 @@ export default function AuditForm() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setAnswers({ ...answers, [qId]: "failed" })}
+                      onClick={() =>
+                        setAnswers({ ...answers, [qId]: "failed" })
+                      }
                       style={{
                         ...btnSmallStyle,
-                        background: answers[qId] === "failed" ? "#dc3545" : "#e9ecef",
+                        background:
+                          answers[qId] === "failed" ? "#dc3545" : "#e9ecef",
                         color: answers[qId] === "failed" ? "#fff" : "#333",
                       }}
                     >
@@ -348,7 +449,6 @@ export default function AuditForm() {
           </div>
         )}
 
-        {/* 💾 Кнопка сохранения */}
         <button
           type="submit"
           disabled={loading || selectedQuestions.length === 0}
@@ -360,7 +460,6 @@ export default function AuditForm() {
           {loading ? "Сохранение..." : "💾 Сохранить результат"}
         </button>
 
-        {/* 📢 Сообщения */}
         {msg && (
           <p
             style={{
@@ -383,7 +482,6 @@ export default function AuditForm() {
 }
 
 // ==================== СТИЛИ ====================
-
 const containerStyle: React.CSSProperties = {
   maxWidth: 900,
   margin: "0 auto",
@@ -424,13 +522,27 @@ const suggestionsStyle: React.CSSProperties = {
   padding: 0,
   listStyle: "none",
   boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+  borderRadius: "4px",
 };
 
 const suggestionItemStyle: React.CSSProperties = {
-  padding: 8,
+  padding: "8px 12px",
   cursor: "pointer",
   borderBottom: "1px solid #eee",
   fontSize: "14px",
+  transition: "background 0.1s",
+};
+
+const noResultsStyle: React.CSSProperties = {
+  position: "absolute",
+  background: "#fff",
+  border: "1px solid #ddd",
+  width: "100%",
+  padding: "8px 12px",
+  zIndex: 10,
+  color: "#666",
+  fontSize: "13px",
+  borderRadius: "4px",
 };
 
 const questionsGridStyle: React.CSSProperties = {
@@ -460,7 +572,6 @@ const answersBoxStyle: React.CSSProperties = {
   marginBottom: 20,
 };
 
-// ✅ Строка ответа: текст + кнопки
 const answerRowStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "flex-start",
@@ -470,7 +581,6 @@ const answerRowStyle: React.CSSProperties = {
   borderBottom: "1px solid #f0f0f0",
 };
 
-// ✅ Текст вопроса: сжимается, переносится
 const answerTextStyle: React.CSSProperties = {
   flex: 1,
   minWidth: 0,
@@ -481,14 +591,12 @@ const answerTextStyle: React.CSSProperties = {
   overflowWrap: "break-word",
 };
 
-// ✅ Контейнер кнопок: не сжимается
 const answerButtonsStyle: React.CSSProperties = {
   display: "flex",
   gap: "8px",
   flexShrink: 0,
 };
 
-// ✅ Кнопки: удобные, с переходом
 const btnSmallStyle: React.CSSProperties = {
   padding: "8px 16px",
   border: "none",

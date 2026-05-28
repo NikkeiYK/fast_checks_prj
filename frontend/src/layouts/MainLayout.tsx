@@ -1,5 +1,7 @@
-import { Link, Outlet, useLocation } from "react-router-dom";
-import { useState } from "react";
+// src/layouts/MainLayout.tsx
+import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useAuth } from "../hooks/useAuth";
 
 type MenuItem = { label: string; path: string };
 type MenuGroup = { title: string; items: MenuItem[] };
@@ -8,7 +10,8 @@ const menuTree: MenuGroup[] = [
   {
     title: "ОТиПБ",
     items: [
-      { label: "Быстрые проверки", path: "/otipb/audit" }
+      { label: "Быстрые проверки", path: "/otipb/audit" },
+ 
     ]
   }, 
   {
@@ -20,10 +23,20 @@ const menuTree: MenuGroup[] = [
 ];
 
 export default function MainLayout() {
+  const { isAuthenticated, isAdmin, logout, user } = useAuth(); // 🔹 Добавили logout и user
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // 🔹 Только проверка авторизации
+  useEffect(() => {
+    if (!isAuthenticated) {
+      navigate("/login");
+    }
+  }, [isAuthenticated, navigate]);
+
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     "ОТиПБ": true,
   });
-  const location = useLocation();
 
   const toggleGroup = (title: string) => {
     setOpenGroups((prev) => ({ ...prev, [title]: !prev[title] }));
@@ -40,12 +53,23 @@ export default function MainLayout() {
     return currentPath === itemPath || currentPath.startsWith(`${prefix}/`);
   };
 
+  //  Фильтрация пунктов меню по роли
+  const filteredMenuTree = menuTree.map(group => ({
+    ...group,
+    items: group.items.filter(item => {
+      if (item.path === "/otipb/main" && !isAdmin) return false;
+      return true;
+    })
+  }));
+
+  //  Обработчик выхода
+  const handleLogout = () => {
+    console.log("👋 Logout triggered by", user?.username);
+    logout(); 
+  };
+
   return (
     <div style={styles.layout}>
-      
-      {/* ═══════════════════════════════════════════
-          САЙДБАР: fixed, всегда виден, не скроллится
-          ═══════════════════════════════════════════ */}
       <aside style={styles.sidebar}>
         
         {/* Логотип */}
@@ -53,9 +77,26 @@ export default function MainLayout() {
           <span style={styles.logoText}>Цифровые помощники</span>
         </div>
 
-        {/* Навигация — без внутреннего скролла */}
+        {/* Инфо о пользователе */}
+        {user && (
+          <div style={styles.userInfo}>
+            <div style={styles.userAvatar}>
+              {user.display_name?.charAt(0).toUpperCase() || "U"}
+            </div>
+            <div style={styles.userDetails}>
+              <div style={styles.userName}>{user.display_name}</div>
+              <div style={styles.userRole}>
+                {user.role === "admin" ? "👑 Админ" : "🔍 Аудитор"}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Навигация */}
         <nav style={styles.nav}>
-          {menuTree.map((group) => {
+          {filteredMenuTree.map((group) => {
+            if (group.items.length === 0) return null;
+            
             const isOpen = openGroups[group.title];
             return (
               <div key={group.title} style={styles.group}>
@@ -95,19 +136,24 @@ export default function MainLayout() {
           })}
         </nav>
 
-        {/* Футер сайдбара */}
+        {/* Футер сайдбара с кнопкой выхода */}
         <div style={styles.sidebarFooter}>
           <span style={styles.version}>v1.0.0</span>
+          {/*  Кнопка выхода */}
+          <button 
+            onClick={handleLogout}
+            style={styles.logoutBtn}
+            type="button"
+            title="Выйти из системы"
+          >
+            <span style={styles.logoutIcon}>🚪</span>
+            <span>Выйти</span>
+          </button>
         </div>
       </aside>
-
-      {/* ═══════════════════════════════════════════
-          КОНТЕНТ: сдвинут вправо, скроллится естественно
-          ═══════════════════════════════════════════ */}
       <main style={styles.main}>
         <Outlet />
       </main>
-      
     </div>
   );
 }
@@ -123,6 +169,8 @@ const C = {
   text: "#0F172A",
   textMuted: "#475569",
   textLight: "#64748B",
+  danger: "#DC2626",
+  dangerBg: "#FEE2E2",
 };
 
 const T = {
@@ -154,22 +202,20 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: T.font,
     color: C.text,
     WebkitFontSmoothing: "antialiased",
-    // ✅ Убрали overflow: hidden — пусть браузер управляет скроллом
   },
 
   // ─── САЙДБАР (FIXED) ───────────────────────────
   sidebar: {
-    position: "fixed",     // ✅ Фиксирован относительно окна
+    position: "fixed",
     left: 0,
     top: 0,
     width: "320px",
-    height: "100vh",       // ✅ На всю высоту окна
+    height: "100vh",
     background: C.surface,
     borderRight: `1px solid ${C.border}`,
     display: "flex",
     flexDirection: "column",
-    zIndex: 10,            // ✅ Поверх контента
-    // ✅ НЕТ overflow: auto — скролл только на странице
+    zIndex: 10,
   },
 
   logo: {
@@ -188,10 +234,53 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: "-0.02em",
   },
 
+  // 🔹 Блок информации о пользователе
+  userInfo: {
+    display: "flex",
+    alignItems: "center",
+    gap: S.md,
+    padding: `${S.md} ${S["2xl"]}`,
+    borderBottom: `1px solid ${C.border}`,
+    background: C.primaryBg,
+  },
+
+  userAvatar: {
+    width: "36px",
+    height: "36px",
+    borderRadius: "50%",
+    background: C.primary,
+    color: "#fff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: T.size.lg,
+    fontWeight: T.weight.bold,
+    flexShrink: 0,
+  },
+
+  userDetails: {
+    display: "flex",
+    flexDirection: "column",
+    minWidth: 0,
+  },
+
+  userName: {
+    fontSize: T.size.sm,
+    fontWeight: T.weight.semibold,
+    color: C.text,
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
+
+  userRole: {
+    fontSize: T.size.xs,
+    color: C.textLight,
+  },
+
   nav: {
     flex: 1,
     padding: `${S.md} 0`,
-    // ✅ Убрали overflowY: auto — меню не скроллится отдельно
   },
 
   group: { marginBottom: S.xs },
@@ -249,13 +338,15 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: T.weight.semibold,
   },
 
+  // ─── ФУТЕР САЙДБАРА С КНОПКОЙ ВЫХОДА ─────────
   sidebarFooter: {
     padding: `${S.md} ${S["2xl"]}`,
     borderTop: `1px solid ${C.border}`,
     background: C.bg,
-    height: "48px",
     display: "flex",
     alignItems: "center",
+    justifyContent: "space-between",
+    gap: S.md,
     boxSizing: "border-box",
   },
 
@@ -264,12 +355,38 @@ const styles: Record<string, React.CSSProperties> = {
     color: C.textLight,
   },
 
+  // 🔹 Кнопка выхода
+  logoutBtn: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    padding: `${S.sm} ${S.lg}`,
+    background: "transparent",
+    border: `1px solid ${C.border}`,
+    borderRadius: "6px",
+    color: C.textMuted,
+    fontSize: T.size.sm,
+    fontWeight: T.weight.medium,
+    cursor: "pointer",
+    transition: "all 120ms ease",
+    whiteSpace: "nowrap",
+  },
+
+  logoutBtnHover: {
+    background: C.dangerBg,
+    borderColor: C.danger,
+    color: C.danger,
+  },
+
+  logoutIcon: {
+    fontSize: "14px",
+  },
+
   // ─── ОСНОВНОЙ КОНТЕНТ ──────────────────────────
   main: {
     flex: 1,
-    marginLeft: "320px",   // ✅ Сдвиг на ширину сайдбара
+    marginLeft: "320px",
     padding: `${S["4xl"]} ${S["3xl"]}`,
-    // ✅ НЕТ overflow: auto — скролл управляется браузером естественно
     minWidth: 0,
   },
 };

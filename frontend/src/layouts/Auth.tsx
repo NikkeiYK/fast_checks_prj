@@ -4,8 +4,22 @@ import { useNavigate } from "react-router-dom";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
+//  Типы для авторизации
+export interface AuthUser {
+  username: string;
+  display_name: string;
+  role: "admin" | "auditor";
+}
+
+export interface AuthState {
+  loggedIn: boolean;
+  user: AuthUser;
+  permissions: string[];
+  timestamp: number;
+}
+
 export default function LoginForm() {
-  const [username, setUsername] = useState("polylab"); // предзаполняем для удобства
+  const [username, setUsername] = useState("polylab");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -26,13 +40,28 @@ export default function LoginForm() {
       const data = await res.json();
 
       if (res.ok && data.success) {
-        // Сохраняем состояние входа
-        localStorage.setItem("polylab_auth", JSON.stringify({
+        //  Сохраняем расширенное состояние с ролью и правами
+        const authState: AuthState = {
           loggedIn: true,
-          user: data.user,
+          user: data.user, // { username, display_name, role }
+          permissions: data.permissions || [], //  новый массив прав
           timestamp: Date.now(),
+        };
+        
+        localStorage.setItem("polylab_auth", JSON.stringify(authState));
+
+        //  Принудительно обновляем useAuth во всём приложении
+        window.dispatchEvent(new StorageEvent("storage", { 
+          key: "polylab_auth", 
+          newValue: JSON.stringify(authState) 
         }));
-        navigate("/"); // редирект после входа
+        
+        //  Редирект в зависимости от роли
+        if (data.user?.role === "admin") {
+          navigate("/otipb/main"); // вкладка "Главная" для админа
+        } else {
+          navigate("/otipb/audit"); // стандартный маршрут для аудитора
+        }
       } else {
         setError(data.detail || "Неверный логин или пароль");
       }
@@ -57,7 +86,8 @@ export default function LoginForm() {
             onChange={(e) => setUsername(e.target.value)}
             style={styles.input}
             disabled={loading}
-            autoComplete="Логин"
+            autoComplete="username"
+            placeholder="polylab / admin"
           />
         </div>
 
@@ -69,7 +99,8 @@ export default function LoginForm() {
             onChange={(e) => setPassword(e.target.value)}
             style={styles.input}
             disabled={loading}
-            autoComplete="Текущий пароль"
+            autoComplete="current-password"
+            placeholder="••••••••"
           />
         </div>
 
@@ -141,5 +172,7 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: "16px",
     textAlign: "center",
     color: "#64748B",
+    fontSize: "12px",
+    lineHeight: "1.4",
   },
 };

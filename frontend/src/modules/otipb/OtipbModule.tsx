@@ -1,15 +1,47 @@
+// src/modules/OtipbLayout.tsx
 import { NavLink, Outlet } from "react-router-dom";
+import { useAuth } from "../../hooks/useAuth"; // импортируем хук авторизации
 
-const tabs = [
-  { label: "Быстрые проверки", path: "/otipb/audit", icon: "📝" },
-  { label: "История проверок", path: "/otipb/history", icon: "📋" }
+//  Расширяем тип вкладки для удобства фильтрации
+interface TabConfig {
+  label: string;
+  path: string;
+  icon?: string;
+  roles?: ("admin" | "auditor")[]; //  если не указано — доступно всем
+}
+
+const tabs: TabConfig[] = [
+  {
+    label: "Главная",
+    path: "/otipb/main",
+    roles: ["admin"], //  только для админов
+  },
+  { 
+    label: "Быстрые проверки", 
+    path: "/otipb/audit", 
+    icon: "📝",
+    // доступно всем по умолчанию
+  },
+  { 
+    label: "Списки для проверок", 
+    path: "/otipb/no-checked-list", 
+    icon: "📋",
+    // доступно всем по умолчанию
+  }
 ];
 
 export default function OtipbLayout() {
+  const { user } = useAuth(); //  получаем данные о пользователе
+
+  //  Фильтруем вкладки: если у вкладки есть roles — показываем только если роль совпадает
+  const visibleTabs = tabs.filter(tab => 
+    !tab.roles || tab.roles.includes(user?.role as "admin" | "auditor")
+  );
+
   return (
     <div style={container}>
       <div style={tabsBar}>
-        {tabs.map((tab) => (
+        {visibleTabs.map((tab) => (
           <NavLink
             key={tab.path}
             to={tab.path}
@@ -19,7 +51,7 @@ export default function OtipbLayout() {
               color: isActive ? "#008B92" : "#5A6B7C",
             })}
           >
-            <span style={tabIcon}>{tab.icon}</span>
+            {tab.icon && <span style={tabIcon}>{tab.icon}</span>}
             <span>{tab.label}</span>
           </NavLink>
         ))}

@@ -10,4 +10,8 @@ export const API = {
   dashboard: (name: string) =>
     `${API_BASE}/api/dashboard/${encodeURIComponent(name)}`,
   export: `${API_BASE}/api/export-excel`,
+  importEmployees: `${API_BASE}/api/import-employees`,
+  quarters: `${API_BASE}/api/quarters`,
+  quarterlyReport: `${API_BASE}/api/report/quarterly`,
+  employeesNotChecked: `${API_BASE}/api/employees/not-checked`, 
 } as const;
