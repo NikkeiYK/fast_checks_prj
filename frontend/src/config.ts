@@ -14,4 +14,13 @@ export const API = {
   quarters: `${API_BASE}/api/quarters`,
   quarterlyReport: `${API_BASE}/api/report/quarterly`,
   employeesNotChecked: `${API_BASE}/api/employees/not-checked`, 
+
+  climate: {
+    slots: `${API_BASE}/api/climate/slots`,
+    book: `${API_BASE}/api/climate/book`,
+    booking: (id: string) => `${API_BASE}/api/climate/booking/${id}`,
+    cancel: (id: string) => `${API_BASE}/api/climate/cancel/${id}`,
+    meta: `${API_BASE}/api/climate/meta`,
+    history: `${API_BASE}/api/climate/history`,  // 🔹 Добавь эту строку
+  },
 } as const;

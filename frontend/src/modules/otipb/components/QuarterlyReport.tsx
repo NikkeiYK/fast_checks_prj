@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { API } from "../../../config";
 
-// ✅ Интерфейс для истории проверок (совместим с HistoryItem)
 interface HistoryItem {
   id: string;
   auditor_fio: string;
@@ -13,14 +12,12 @@ interface HistoryItem {
   employee_dept: string;
   employee_center: string;
   questions_asked: number[];
-  session_status: string; // "Сдан" / "В процессе"
+  session_status: string;
   total_passed: number;
   total_failed: number;
-  // ✅ Опционально: детализация по вопросам (если бэкенд вернёт)
   question_results?: Record<number, "passed" | "failed">;
 }
 
-// ✅ Фильтры для истории внутри QuarterlyReport
 interface HistoryFilters {
   auditor_fio: string;
   date_from: string;
@@ -38,7 +35,6 @@ export default function QuarterlyReport() {
   const [importMsg, setImportMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
-  // ✅ Состояние для истории внутри развёрнутого центра
   const [centerHistory, setCenterHistory] = useState<HistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyFilters, setHistoryFilters] = useState<HistoryFilters>({
@@ -84,15 +80,17 @@ export default function QuarterlyReport() {
     if (selectedQuarter) loadReport();
   }, [selectedQuarter]);
 
-  // 🔁 Авто-обновление истории при смене квартала (если центр раскрыт)
   useEffect(() => {
     if (expandedCenter && selectedQuarter) {
       loadCenterHistory(expandedCenter, selectedQuarter, historyFilters);
     }
   }, [selectedQuarter, expandedCenter]);
 
-  // ✅ Загрузка истории для конкретного центра
-  const loadCenterHistory = async (center: string, quarter: string, filters: HistoryFilters) => {
+  const loadCenterHistory = async (
+    center: string,
+    quarter: string,
+    filters: HistoryFilters
+  ) => {
     setHistoryLoading(true);
     const params = new URLSearchParams({ center, quarter });
     Object.entries(filters).forEach(([k, v]) => {
@@ -110,14 +108,12 @@ export default function QuarterlyReport() {
     }
   };
 
-  // ✅ Применение фильтров истории
   const applyHistoryFilters = () => {
     if (expandedCenter && selectedQuarter) {
       loadCenterHistory(expandedCenter, selectedQuarter, historyFilters);
     }
   };
 
-  // ✅ Сброс фильтров истории
   const resetHistoryFilters = () => {
     const empty: HistoryFilters = {
       auditor_fio: "",
@@ -132,7 +128,6 @@ export default function QuarterlyReport() {
     }
   };
 
-  // ✅ Формирование URL для экспорта Excel (с учётом фильтров)
   const getExportUrl = () => {
     const params = new URLSearchParams({ quarter: selectedQuarter });
     if (expandedCenter) params.append("center", expandedCenter);
@@ -160,33 +155,39 @@ export default function QuarterlyReport() {
     }
   };
 
+  const deleteSession = async (sessionId: string) => {
+    if (!window.confirm("Удалить эту запись проверки?")) return;
+    try {
+      await axios.delete(`${API.sessions}/${sessionId}`);
+      if (expandedCenter && selectedQuarter) {
+        loadCenterHistory(expandedCenter, selectedQuarter, historyFilters);
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Ошибка удаления");
+    }
+  };
+
   const toggleCenter = async (center: string) => {
     const newExpanded = expandedCenter === center ? null : center;
     setExpandedCenter(newExpanded);
-    
-    // ✅ При раскрытии центра загружаем историю
     if (newExpanded && selectedQuarter) {
       await loadCenterHistory(newExpanded, selectedQuarter, historyFilters);
     }
   };
 
-  // ✅ Определение результата проверки: сдал/не сдал
   const getCheckResult = (item: HistoryItem): "passed" | "failed" => {
-    // Если есть хотя бы 1 неверный ответ — не сдал
     if (item.total_failed > 0) return "failed";
-    // Если все ответы верные и сессия завершена — сдал
     if (item.session_status === "Сдан" && item.total_passed > 0) return "passed";
-    return "failed"; // по умолчанию
+    return "failed";
   };
 
-  // ✅ Получение статуса для конкретного вопроса
-  const getQuestionStatus = (item: HistoryItem, questionNum: number): "passed" | "failed" | "unknown" => {
-    // Если бэкенд вернул детальную информацию
+  const getQuestionStatus = (
+    item: HistoryItem,
+    questionNum: number
+  ): "passed" | "failed" | "unknown" => {
     if (item.question_results?.[questionNum]) {
       return item.question_results[questionNum];
     }
-    // ✅ Эмуляция: если total_failed > 0, считаем что последние вопросы могли быть неверными
-    // ⚠️ В продакшене лучше получать точные данные с бэкенда
     if (item.total_failed > 0 && questionNum > item.total_passed) {
       return "failed";
     }
@@ -197,16 +198,15 @@ export default function QuarterlyReport() {
     <div style={containerStyle}>
       <h2>📊 Статистика быстрой проверки</h2>
 
-      {/* Блок импорта */}
       <div style={sectionStyle}>
-        <h4>📥 Импорт сотрудников из Excel (полная синхронизация)</h4>
+        <h4>📥 Импорт сотрудников из Excel</h4>
         <p style={{ fontSize: 14, color: "#666", marginBottom: 8 }}>
-          Загрузите файл Excel с колонками: <b>ФИО, Центр, Подразделение</b>.
-          Все предыдущие сотрудники будут заменены.
+          Загрузите файл с колонками: <b>ФИО, Центр, Подразделение</b>.
+          История проверок сохранится.
         </p>
         <input
           type="file"
-          accept=".xlsx"
+          accept=".xlsx,.csv"
           onChange={handleFileImport}
           style={{ marginBottom: 10 }}
         />
@@ -215,35 +215,32 @@ export default function QuarterlyReport() {
         )}
       </div>
 
-      {/* Выбор квартала */}
       {errorMsg && <div style={messageStyle(false)}>{errorMsg}</div>}
-      {quarters.length > 0 ? (
-        <div style={sectionStyle}>
-          <label><b>Квартал: </b></label>
-          <select
-            value={selectedQuarter}
-            onChange={(e) => setSelectedQuarter(e.target.value)}
-            style={selectStyle}
-          >
-            {quarters.map((q) => (
-              <option key={q} value={q}>{q}</option>
-            ))}
-          </select>
-          <button onClick={loadReport} disabled={loading} style={btnStyle}>
-            🔄 Обновить
-          </button>
-        </div>
-      ) : (
-        !errorMsg && (
-          <div style={sectionStyle}>
-            <p>Нет данных о кварталах. Проведите хотя бы одну проверку.</p>
-          </div>
-        )
-      )}
+      <div style={sectionStyle}>
+        <label><b>Квартал: </b></label>
+        <select
+          value={selectedQuarter}
+          onChange={(e) => setSelectedQuarter(e.target.value)}
+          style={selectStyle}
+        >
+          {quarters.map((q) => (
+            <option key={q} value={q}>
+              {q}
+            </option>
+          ))}
+        </select>
+        <button onClick={loadReport} disabled={loading} style={btnStyle}>
+          🔄 Обновить
+        </button>
+      </div>
 
-      {/* Таблица отчёта */}
       {loading && <p style={{ textAlign: "center" }}>Загрузка...</p>}
-      {report && (
+      {report && report.centers?.length === 0 && (
+        <div style={emptyReportStyle}>
+          📭 Нет данных по центрам. Импортируйте список сотрудников.
+        </div>
+      )}
+      {report && report.centers?.length > 0 && (
         <div>
           <h4>Общая сводка за {report.quarter}</h4>
           <table style={tableStyle}>
@@ -262,7 +259,8 @@ export default function QuarterlyReport() {
                   <tr
                     style={{
                       cursor: "pointer",
-                      background: expandedCenter === c.center ? "#f0f0f0" : "white",
+                      background:
+                        expandedCenter === c.center ? "#f0f0f0" : "white",
                     }}
                     onClick={() => toggleCenter(c.center)}
                   >
@@ -271,21 +269,16 @@ export default function QuarterlyReport() {
                     <td style={{ ...tdStyle, color: "#28a745", fontWeight: 500 }}>
                       {c.checked}
                     </td>
-                    <td style={{ ...tdStyle, color: "#6c757d" }}>
-                      {c.not_checked}
-                    </td>
+                    <td style={{ ...tdStyle, color: "#6c757d" }}>{c.not_checked}</td>
                     <td style={tdStyle}>
                       {expandedCenter === c.center ? "▲" : "▼"}
                     </td>
                   </tr>
 
-                  {/* ✅ Развёрнутая секция с историей и экспортом */}
                   {expandedCenter === c.center && (
                     <tr>
                       <td colSpan={5} style={{ padding: 0, background: "#fafafa" }}>
                         <div style={historySectionStyle}>
-                          
-                          {/* Заголовок секции с кнопкой экспорта */}
                           <div style={historyHeaderStyle}>
                             <div>
                               <h4 style={{ margin: "0 0 10px 0" }}>
@@ -295,7 +288,6 @@ export default function QuarterlyReport() {
                                 Квартал: <b>{selectedQuarter}</b>
                               </p>
                             </div>
-                            {/* ✅ Кнопка экспорта с сохранением логики */}
                             <a
                               href={getExportUrl()}
                               target="_blank"
@@ -306,29 +298,48 @@ export default function QuarterlyReport() {
                             </a>
                           </div>
 
-                          {/* Фильтры истории */}
                           <div style={filtersPanelStyle}>
                             <input
                               placeholder="Аудитор"
                               value={historyFilters.auditor_fio}
-                              onChange={(e) => setHistoryFilters({ ...historyFilters, auditor_fio: e.target.value })}
+                              onChange={(e) =>
+                                setHistoryFilters({
+                                  ...historyFilters,
+                                  auditor_fio: e.target.value,
+                                })
+                              }
                               style={inputStyle}
                             />
                             <input
                               type="date"
                               value={historyFilters.date_from}
-                              onChange={(e) => setHistoryFilters({ ...historyFilters, date_from: e.target.value })}
+                              onChange={(e) =>
+                                setHistoryFilters({
+                                  ...historyFilters,
+                                  date_from: e.target.value,
+                                })
+                              }
                               style={inputStyle}
                             />
                             <input
                               type="date"
                               value={historyFilters.date_to}
-                              onChange={(e) => setHistoryFilters({ ...historyFilters, date_to: e.target.value })}
+                              onChange={(e) =>
+                                setHistoryFilters({
+                                  ...historyFilters,
+                                  date_to: e.target.value,
+                                })
+                              }
                               style={inputStyle}
                             />
                             <select
                               value={historyFilters.status}
-                              onChange={(e) => setHistoryFilters({ ...historyFilters, status: e.target.value })}
+                              onChange={(e) =>
+                                setHistoryFilters({
+                                  ...historyFilters,
+                                  status: e.target.value,
+                                })
+                              }
                               style={inputStyle}
                             >
                               <option value="">Все статусы</option>
@@ -338,22 +349,34 @@ export default function QuarterlyReport() {
                             <input
                               placeholder="Квартал"
                               value={historyFilters.quarter}
-                              onChange={(e) => setHistoryFilters({ ...historyFilters, quarter: e.target.value })}
+                              onChange={(e) =>
+                                setHistoryFilters({
+                                  ...historyFilters,
+                                  quarter: e.target.value,
+                                })
+                              }
                               style={inputStyle}
                             />
                             <div style={{ display: "flex", gap: 8 }}>
-                              <button onClick={applyHistoryFilters} style={{ ...btnSmallStyle, background: "#007bff" }}>
+                              <button
+                                onClick={applyHistoryFilters}
+                                style={{ ...btnSmallStyle, background: "#007bff" }}
+                              >
                                 🔍
                               </button>
-                              <button onClick={resetHistoryFilters} style={{ ...btnSmallStyle, background: "#6c757d" }}>
+                              <button
+                                onClick={resetHistoryFilters}
+                                style={{ ...btnSmallStyle, background: "#6c757d" }}
+                              >
                                 🔄
                               </button>
                             </div>
                           </div>
 
-                          {/* Таблица истории */}
                           {historyLoading ? (
-                            <p style={{ textAlign: "center", padding: 20 }}>Загрузка истории...</p>
+                            <p style={{ textAlign: "center", padding: 20 }}>
+                              Загрузка истории...
+                            </p>
                           ) : (
                             <div style={{ overflowX: "auto" }}>
                               <table style={innerTableStyle}>
@@ -364,8 +387,8 @@ export default function QuarterlyReport() {
                                     <th style={innerThStyle}>Сотрудник</th>
                                     <th style={innerThStyle}>Подразделение</th>
                                     <th style={innerThStyle}>Вопросы</th>
-                                    <th style={innerThStyle}>Статус</th>
                                     <th style={innerThStyle}>Результат</th>
+                                    <th style={innerThStyle}>Действия</th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -392,11 +415,33 @@ export default function QuarterlyReport() {
                                                   key={qNum}
                                                   style={{
                                                     ...questionBadgeStyle,
-                                                    background: qStatus === "passed" ? "#d4edda" : qStatus === "failed" ? "#f8d7da" : "#e9ecef",
-                                                    color: qStatus === "passed" ? "#155724" : qStatus === "failed" ? "#721c24" : "#666",
-                                                    border: `1px solid ${qStatus === "passed" ? "#c3e6cb" : qStatus === "failed" ? "#f5c6cb" : "#ccc"}`,
+                                                    background:
+                                                      qStatus === "passed"
+                                                        ? "#d4edda"
+                                                        : qStatus === "failed"
+                                                        ? "#f8d7da"
+                                                        : "#e9ecef",
+                                                    color:
+                                                      qStatus === "passed"
+                                                        ? "#155724"
+                                                        : qStatus === "failed"
+                                                        ? "#721c24"
+                                                        : "#666",
+                                                    border: `1px solid ${
+                                                      qStatus === "passed"
+                                                        ? "#c3e6cb"
+                                                        : qStatus === "failed"
+                                                        ? "#f5c6cb"
+                                                        : "#ccc"
+                                                    }`,
                                                   }}
-                                                  title={qStatus === "passed" ? "Верно" : qStatus === "failed" ? "Неверно" : "Статус неизвестен"}
+                                                  title={
+                                                    qStatus === "passed"
+                                                      ? "Верно"
+                                                      : qStatus === "failed"
+                                                      ? "Неверно"
+                                                      : "Статус неизвестен"
+                                                  }
                                                 >
                                                   #{qNum}
                                                 </span>
@@ -406,23 +451,33 @@ export default function QuarterlyReport() {
                                               +{item.total_passed} / −{item.total_failed}
                                             </div>
                                           </td>
-                                          <td style={{
-                                            ...innerTdStyle,
-                                            fontWeight: 500,
-                                            color: item.session_status === "Сдан" ? "#28a745" : "#007bff"
-                                          }}>
-                                            {item.session_status === "Сдан" ? "Пройдено" : "Не пройдено"}
-                                          </td>
-                                          <td style={{
-                                            ...innerTdStyle,
-                                            fontWeight: 600,
-                                            color: result === "passed" ? "#28a745" : "#dc3545",
-                                            background: result === "passed" ? "#d4edda33" : "#f8d7da33",
-                                            padding: "6px 10px",
-                                            borderRadius: "4px",
-                                            textAlign: "center" as const,
-                                          }}>
+                                          <td
+                                            style={{
+                                              ...innerTdStyle,
+                                              fontWeight: 600,
+                                              color: result === "passed" ? "#28a745" : "#dc3545",
+                                              background: result === "passed" ? "#d4edda33" : "#f8d7da33",
+                                              padding: "6px 10px",
+                                              borderRadius: "4px",
+                                              textAlign: "center" as const,
+                                            }}
+                                          >
                                             {result === "passed" ? "✅ Сдал" : "❌ Не сдал"}
+                                          </td>
+                                          <td style={innerTdStyle}>
+                                            <button
+                                              onClick={() => deleteSession(item.id)}
+                                              style={deleteBtnStyle}
+                                              title="Удалить запись"
+                                              onMouseOver={(e) =>
+                                                (e.currentTarget.style.background = "#fee2e2")
+                                              }
+                                              onMouseOut={(e) =>
+                                                (e.currentTarget.style.background = "none")
+                                              }
+                                            >
+                                              🗑️
+                                            </button>
                                           </td>
                                         </tr>
                                       );
@@ -448,7 +503,7 @@ export default function QuarterlyReport() {
 
 // ==================== СТИЛИ ====================
 const containerStyle: React.CSSProperties = {
-  maxWidth: 1200,
+  maxWidth: 1400,
   margin: "0 auto",
   padding: 20,
   fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
@@ -619,3 +674,23 @@ const messageStyle = (isSuccess: boolean): React.CSSProperties => ({
   color: isSuccess ? "#155724" : "#721c24",
   fontSize: 14,
 });
+
+const emptyReportStyle: React.CSSProperties = {
+  textAlign: "center",
+  padding: 40,
+  color: "#666",
+  background: "#f8f9fa",
+  borderRadius: 8,
+  fontSize: 15,
+};
+
+const deleteBtnStyle: React.CSSProperties = {
+  background: "none",
+  border: "none",
+  color: "#dc3545",
+  cursor: "pointer",
+  fontSize: 16,
+  padding: "4px 8px",
+  borderRadius: 4,
+  transition: "background 0.2s",
+};
