@@ -63,7 +63,10 @@ const formatRuDateTime = (iso: string): string => {
 
 const formatRuDateInput = (iso: string): string => {
   if (!iso) return "";
-  return iso.slice(0, 16); // "2026-02-20T16:30"
+  const d = new Date(iso);
+  // Форматируем для datetime-local в локальном времени
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
 // ─── COMPONENT ───
@@ -206,28 +209,31 @@ export default function Booking() {
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user || !activeSlotNum) return;
-    setSubmitting(true);
-    try {
-      const payload = {
-        slot_number: activeSlotNum, fio: form.fio, sample_code: form.sample_code,
-        project: form.project, start_time: form.start_time.replace(" ", "T") + ":00",
-        duration_hours: form.duration_hours,
-        conditions: form.conditions || undefined, comments: form.comments || undefined,
-      };
-      const res = await fetch(`${API.climate.book}${getAuth()}`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Ошибка");
-      showToast(`✅ Слот #${activeSlotNum} забронирован`);
-      closeModal(); loadSlots();
-      setForm({ fio: "", sample_code: "", project: "", start_time: "", duration_hours: 1000, conditions: "", comments: "" });
-    } catch (e: any) { showToast(e.message, "error"); }
-    finally { setSubmitting(false); }
-  };
+  e.preventDefault();
+  if (!user || !activeSlotNum) return;
+  setSubmitting(true);
+  try {
+    // 🔹 Отправляем как есть (локальное время), бэкенд сам конвертирует
+    const payload = {
+      slot_number: activeSlotNum, fio: form.fio, sample_code: form.sample_code,
+      project: form.project,
+      start_time: form.start_time,  // "2026-06-01T15:48"
+      duration_hours: form.duration_hours,
+      conditions: form.conditions || undefined, comments: form.comments || undefined,
+    };
+    
+    const res = await fetch(`${API.climate.book}${getAuth()}`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Ошибка");
+    showToast(`✅ Слот #${activeSlotNum} забронирован`);
+    closeModal(); loadSlots(); loadHistory();
+    setForm({ fio: "", sample_code: "", project: "", start_time: "", duration_hours: 1000, conditions: "", comments: "" });
+  } catch (e: any) { showToast(e.message, "error"); }
+  finally { setSubmitting(false); }
+};
 
   const handleCancel = async () => {
   if (!user || !activeBookingId) return;
@@ -237,18 +243,33 @@ export default function Booking() {
 
   const comment = prompt("Причина отмены (необязательно):") || "";
   try {
-    const res = await fetch(`/api/climate/cancel/${activeBookingId}${getAuth()}&comment=${encodeURIComponent(comment)}`, { 
+    // 🔹 ИСПРАВЛЕНИЕ: используем API.climate.cancel вместо хардкода
+    const cancelUrl = API.climate.cancel(activeBookingId);
+    
+    console.log("🗑️ Cancel URL:", cancelUrl);
+    
+    const res = await fetch(`${cancelUrl}${getAuth()}&comment=${encodeURIComponent(comment)}`, { 
       method: "POST" 
     });
+    
+    // 🔹 Проверяем Content-Type перед парсингом JSON
+    const contentType = res.headers.get("content-type");
+    if (!contentType || !contentType.includes("application/json")) {
+      const text = await res.text();
+      console.error("❌ Server returned non-JSON:", text.slice(0, 200));
+      throw new Error("Сервер вернул не JSON");
+    }
+    
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || "Ошибка отмены");
+    if (!res.ok) throw new Error(data.detail || `Ошибка ${res.status}`);
     
     showToast("🗑️ Слот успешно освобождён");
     closeModal();
     loadSlots();
-    loadHistory(); // Обновляем историю сразу
+    loadHistory();
   } catch (e: any) {
-    showToast(e.message, "error");
+    console.error("❌ Cancel error:", e);
+    showToast(e.message || "Ошибка отмены", "error");
   }
 };
 

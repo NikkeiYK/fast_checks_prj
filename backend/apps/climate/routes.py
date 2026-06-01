@@ -1,34 +1,40 @@
-# apps/climate/routes.py
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
+import os
 
 from apps.climate.database import get_db
 from apps.climate.models import Booking
 
 router = APIRouter(prefix="/api/climate", tags=["climate_chamber"])
 
-# 🔹 Используем ту же базу пользователей, что и в аудите
+# 🔹 Принудительно устанавливаем MSK (UTC+3) для всех операций
+MSK = timezone(timedelta(hours=3))
+os.environ['TZ'] = 'Europe/Moscow'
+
+def get_msk_now() -> datetime:
+    """Возвращает текущее время в MSK (без timezone info)"""
+    return datetime.now(MSK).replace(tzinfo=None)
+
+# 🔹 База пользователей
 USERS_DB = {
     "polylab": {"password": "2026", "role": "auditor", "permissions": ["climate:read", "climate:book"]},
     "admin": {"password": "admin", "role": "admin", "permissions": ["climate:read", "climate:book", "climate:cancel"]}
 }
 
 def check_auth(username: str) -> dict:
-    """Проверяет пользователя и возвращает его данные"""
     user = USERS_DB.get(username)
     if not user:
         raise HTTPException(401, detail="Пользователь не найден")
     return user
 
 def has_permission(user: dict, perm: str) -> bool:
-    """Проверяет наличие права"""
     return "*" in user.get("permissions", []) or perm in user.get("permissions", [])
 
 def cleanup_expired(db: Session):
-    """Автоматически помечает просроченные брони как отменённые"""
-    now = datetime.now()
+    """Помечает просроченные брони как отменённые"""
+    now = get_msk_now()
     expired = db.query(Booking).filter(
         Booking.is_cancelled == False,
         Booking.end_time < now
@@ -47,13 +53,15 @@ def get_slots(
     db: Session = Depends(get_db)
 ):
     user = check_auth(username)
-    
-    # 🔹 Авто-очистка просроченных броней
     cleanup_expired(db)
     
-    ref = datetime.fromisoformat(date) if date else datetime.now()
-    slots = []
+    # Референсное время в MSK
+    if date:
+        ref = datetime.fromisoformat(date[:19])
+    else:
+        ref = get_msk_now()
     
+    slots = []
     for num in range(1, 25):
         b = db.query(Booking).filter(
             Booking.slot_number == num,
@@ -63,9 +71,14 @@ def get_slots(
         ).first()
         
         if b:
+            # Считаем прогресс
+            total_seconds = (b.end_time - b.start_time).total_seconds()
+            elapsed_seconds = (ref - b.start_time).total_seconds()
+            progress = min(100, max(0, round((elapsed_seconds / total_seconds) * 100, 1))) if total_seconds > 0 else 0
+            
             hours_left = (b.end_time - ref).total_seconds() / 3600
             status = "ending_soon" if hours_left < 48 else "busy"
-            progress = min(100, max(0, (1 - hours_left / (b.duration_hours or 1)) * 100))
+            
             slots.append({
                 "slot_number": num,
                 "status": status,
@@ -73,13 +86,13 @@ def get_slots(
                 "booking_id": b.id,
                 "ends_at": b.end_time.isoformat(),
                 "start_time": b.start_time.isoformat(),
-                "progress": round(progress, 1),
+                "progress": progress,
                 "fio": b.fio,
                 "sample_code": b.sample_code,
                 "project": b.project
             })
         else:
-            # Проверяем будущие брони для подсказки
+            # Свободный слот — ищем следующее бронирование
             future = db.query(Booking).filter(
                 Booking.slot_number == num,
                 Booking.is_cancelled == False,
@@ -113,12 +126,15 @@ def create_booking(
             raise HTTPException(400, detail=f"Отсутствует поле: {f}")
     
     try:
-        start = datetime.fromisoformat(data["start_time"])
-    except:
-        raise HTTPException(400, detail="Неверный формат даты (ожидается ISO: YYYY-MM-DDTHH:MM)")
+        # Парсим время от фронта (формат: "2026-06-01T15:48")
+        start_str = data["start_time"][:19]
+        start = datetime.fromisoformat(start_str)
+    except Exception as e:
+        raise HTTPException(400, detail=f"Неверный формат даты: {e}")
     
     end = start + timedelta(hours=data["duration_hours"])
     
+    # Проверка конфликтов
     conflict = db.query(Booking).filter(
         Booking.slot_number == data["slot_number"],
         Booking.is_cancelled == False,
@@ -134,6 +150,7 @@ def create_booking(
         conditions_template=data.get("conditions"), comments=data.get("comments")
     )
     db.add(new); db.commit(); db.refresh(new)
+    
     return {
         "id": new.id, "slot_number": new.slot_number,
         "start_time": start.strftime("%d.%m.%Y %H:%M"),
@@ -152,16 +169,27 @@ def get_details(
     if not b:
         raise HTTPException(404, detail="Бронь не найдена")
     
-    now = datetime.now()
-    total_hours = (b.end_time - b.start_time).total_seconds() / 3600
-    elapsed_hours = max(0, (now - b.start_time).total_seconds() / 3600)
-    remaining_hours = max(0, (b.end_time - now).total_seconds() / 3600)
-    progress = min(100, round((elapsed_hours / total_hours) * 100, 1)) if total_hours > 0 else 0
+    now = get_msk_now()
+    
+    # Считаем прогресс корректно
+    total_seconds = (b.end_time - b.start_time).total_seconds()
+    elapsed_seconds = max(0, (now - b.start_time).total_seconds())
+    
+    if elapsed_seconds <= 0:
+        progress = 0
+    elif elapsed_seconds >= total_seconds:
+        progress = 100
+    else:
+        progress = round((elapsed_seconds / total_seconds) * 100, 1)
+    
+    remaining_seconds = max(0, (b.end_time - now).total_seconds())
+    remaining_hours = remaining_seconds / 3600
+    remaining_days = int(remaining_hours // 24)
     
     return {
         "start_time": b.start_time.strftime("%d.%m.%Y %H:%M"),
         "end_time": b.end_time.strftime("%d.%m.%Y %H:%M"),
-        "remaining_days": int(remaining_hours // 24),
+        "remaining_days": remaining_days,
         "remaining_hours": round(remaining_hours, 1),
         "progress": progress,
         "sample_code": b.sample_code,
@@ -212,9 +240,10 @@ def get_history(
     limit: int = Query(50),
     db: Session = Depends(get_db)
 ):
-    check_auth(username)  # Только проверка, что пользователь существует
+    check_auth(username)
     bookings = db.query(Booking).order_by(Booking.start_time.desc()).limit(limit).all()
-    now = datetime.now()
+    now = get_msk_now()
+    
     result = []
     for b in bookings:
         if b.is_cancelled:
@@ -223,7 +252,7 @@ def get_history(
             status = "Завершена"
         else:
             status = "Активна"
-            
+        
         result.append({
             "id": b.id,
             "slot": b.slot_number,
