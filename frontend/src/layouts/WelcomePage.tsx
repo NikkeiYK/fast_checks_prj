@@ -1,50 +1,77 @@
-// WelcomePage.tsx
-import { useState } from "react";
+// src/pages/WelcomePage.tsx
+import { Link } from "react-router-dom";
+import { useAuth } from "../hooks/useAuth";
+
+type ServiceCard = {
+  icon: string;
+  title: string;
+  description: string;
+  path: string;
+  adminOnly?: boolean;
+};
+
+const services: ServiceCard[] = [
+  {
+    icon: "🛡️",
+    title: "ОТиПБ",
+    description: "Быстрые проверки, отчёты и мониторинг безопасности.",
+    path: "/otipb/audit",
+  },
+  {
+    icon: "🔬",
+    title: "ЦИРМ",
+    description: "Бронирование оборудования и управление лабораторными ресурсами.",
+    path: "/lab/booking",
+  },
+  {
+    icon: "",
+    title: "НТР", 
+    description: "Мониторинг ростандартов",
+    path: "/monitoring"
+  }
+];
 
 export default function WelcomePage() {
-  const [isLoaded, setIsLoaded] = useState(false);
-  
-  // Простая анимация появления
-  useState(() => {
-    requestAnimationFrame(() => setIsLoaded(true));
-  });
+  const { isAdmin } = useAuth();
+
+  const visibleServices = services.filter((s) => !s.adminOnly || isAdmin);
 
   return (
-    <div style={{
-      ...styles.container,
-      opacity: isLoaded ? 1 : 0,
-      transform: isLoaded ? "translateY(0)" : "translateY(8px)",
-      transition: "opacity 300ms ease, transform 300ms ease",
-    }}>
-      {/* Заголовок */}
+    <div style={styles.container}>
+      {/* 🔹 Заголовок и описание возвращены */}
       <header style={styles.header}>
-        <div style={styles.headerContent}>
-          <h1 style={styles.mainTitle}>
-            Цифровые помощники НИОКР
-          </h1>
-          <p style={styles.subtitle}>
-            Выберите сервис в левом меню для начала работы.
-            Инструменты для исследований, анализа данных и автоматизации процессов.
-          </p>
-        </div>
+        <h1 style={styles.mainTitle}>Цифровые помощники</h1>
+        <p style={styles.subtitle}>
+          Платформа НИОКР для исследований, анализа данных и автоматизации процессов. 
+          Выберите сервис для начала работы.
+        </p>
       </header>
 
-      {/* Карточки сервисов (опционально) */}
       <section style={styles.servicesGrid}>
-        <div style={styles.serviceCard}>
-          <span style={styles.serviceIcon}>🛡️</span>
-          <h3 style={styles.serviceTitle}>ОТиПБ</h3>
-          <p style={styles.serviceDesc}>
-            Быстрые проверки, отчёты и мониторинг безопасности.
-          </p>
-        </div>
-        <div style={styles.serviceCard}>
-          <span style={styles.serviceIcon}>🔬</span>
-          <h3 style={styles.serviceTitle}>ЦИРМ</h3>
-          <p style={styles.serviceDesc}>
-            Бронирование оборудования и управление лабораторными ресурсами.
-          </p>
-        </div>
+        {visibleServices.map((service) => (
+          <Link
+            key={service.path}
+            to={service.path}
+            style={styles.serviceCardLink}
+            onMouseEnter={(e) => {
+              const el = e.currentTarget as HTMLAnchorElement;
+              el.style.transform = "translateY(-4px)";
+              el.style.boxShadow = "0 12px 24px rgba(0, 139, 146, 0.12)";
+              el.style.borderColor = "#008B92";
+            }}
+            onMouseLeave={(e) => {
+              const el = e.currentTarget as HTMLAnchorElement;
+              el.style.transform = "translateY(0)";
+              el.style.boxShadow = "0 1px 3px rgba(0, 0, 0, 0.04)";
+              el.style.borderColor = "#E2E8F0";
+            }}
+          >
+            <span style={styles.serviceIcon}>{service.icon}</span>
+            <h3 style={styles.serviceTitle}>{service.title}</h3>
+            <p style={styles.serviceDesc}>{service.description}</p>
+            <span style={styles.serviceArrow}>→</span>
+          </Link>
+        ))}
       </section>
     </div>
   );
@@ -52,23 +79,12 @@ export default function WelcomePage() {
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    minHeight: "100vh",
     display: "flex",
     flexDirection: "column",
-    backgroundColor: "#F8FAFC",
-    fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
-    padding: "32px",
-    boxSizing: "border-box",
   },
-  
   header: {
-    marginBottom: "40px",
+    marginBottom: "48px",
   },
-  
-  headerContent: {
-    maxWidth: "720px",
-  },
-  
   mainTitle: {
     fontSize: "clamp(32px, 5vw, 48px)",
     fontWeight: 700,
@@ -77,7 +93,6 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.15,
     letterSpacing: "-0.03em",
   },
-  
   subtitle: {
     color: "#475569",
     fontSize: "18px",
@@ -86,66 +101,47 @@ const styles: Record<string, React.CSSProperties> = {
     margin: 0,
     maxWidth: "580px",
   },
-  
   servicesGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
     gap: "20px",
-    marginBottom: "auto",
   },
-  
-  serviceCard: {
+  serviceCardLink: {
+    display: "block",
     background: "#FFFFFF",
-    padding: "24px",
+    padding: "28px 24px",
     borderRadius: "12px",
     border: "1px solid #E2E8F0",
     boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
-    transition: "box-shadow 200ms ease, border-color 200ms ease",
-    cursor: "default",
+    transition: "transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease",
+    cursor: "pointer",
+    textDecoration: "none",
+    color: "inherit",
+    position: "relative",
   },
-  
   serviceIcon: {
-    fontSize: "28px",
-    marginBottom: "12px",
+    fontSize: "32px",
+    marginBottom: "14px",
     display: "block",
   },
-  
   serviceTitle: {
-    fontSize: "16px",
+    fontSize: "18px",
     fontWeight: 600,
     color: "#0F172A",
     margin: "0 0 8px 0",
   },
-  
   serviceDesc: {
     fontSize: "14px",
     color: "#64748B",
     margin: 0,
     lineHeight: 1.5,
   },
-  
-  footer: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "12px",
-    paddingTop: "32px",
-    marginTop: "auto",
-  },
-  
-  version: {
-    fontWeight: 500,
-    fontSize: "13px",
-    color: "#94A3B8",
-  },
-  
-  separator: {
-    color: "#CBD5E1",
-    fontSize: "13px",
-  },
-  
-  copyright: {
-    fontSize: "13px",
-    color: "#94A3B8",
+  serviceArrow: {
+    position: "absolute",
+    right: "20px",
+    top: "24px",
+    fontSize: "20px",
+    color: "#008B92",
+    opacity: 0.6,
   },
 };

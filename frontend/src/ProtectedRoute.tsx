@@ -5,7 +5,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   const { isAuthenticated } = useAuth(); 
   const location = useLocation();
 
-  if (!isAuthenticated) {  // 🔹 И здесь
+  if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 

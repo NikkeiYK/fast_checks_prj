@@ -26,10 +26,28 @@ class LoginRequest(BaseModel): username: str; password: str
 class LoginResponse(BaseModel):
     success: bool; message: str; user: Optional[dict] = None; permissions: List[str] = []
 
-# 🔹 Твоя USERS_DB (можно вынести в config)
 USERS_DB: Dict[str, dict] = {
-    "polylab": {"password": "2026", "display_name": "Polylab Service", "role": "auditor", "permissions": ["audit:read", "audit:write"]},
-    "admin": {"password": "admin", "display_name": "Administrator", "role": "admin", "permissions": ["audit:read", "audit:write", "admin:dashboard", "users:manage"]}
+    "polylab": {
+        "password": "2026",
+        "display_name": "Polylab Service",
+        "role": "auditor",
+        "permissions": [
+            "audit:read", "audit:write",
+            "monitoring:read",
+            "monitoring:scrape",
+        ]
+    },
+    "admin": {
+        "password": "admin",
+        "display_name": "Administrator",
+        "role": "admin",
+        "permissions": [
+            "audit:read", "audit:write",
+            "admin:dashboard", "users:manage",
+            "monitoring:read",
+            "monitoring:scrape",
+        ]
+    }
 }
 
 # Helpers
