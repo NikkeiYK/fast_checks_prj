@@ -98,6 +98,26 @@ class ScrapingLog(Base):
     new_gost_ids = Column(JSON, nullable=True)
     new_sp_ids = Column(JSON, nullable=True)
     updated_statuses = Column(JSON, nullable=True)
+    
+
+class NpaProject(Base):
+    """Проекты нормативных правовых актов (regulation.gov.ru)."""
+    __tablename__ = "npa_projects"
+
+    id = Column(String, primary_key=True, index=True)  # ID проекта (например, 04/15/06-26/00168649)
+    title = Column(Text)
+    developer = Column(String, index=True)  # Орган государственной власти
+    doc_type = Column(String)  # Вид (Проект федерального закона, Проект постановления и т.д.)
+    created_date = Column(String)
+    published_date = Column(String, index=True)
+    stage = Column(String)  # Этап (Текст, Уведомление и т.д.)
+    status = Column(String, index=True)  # Статус (Идет обсуждение и т.д.)
+    procedure = Column(String)  # Процедура (ОРВ, Антикоррупционная экспертиза и т.д.)
+    url = Column(String)
+    is_polymer = Column(Boolean, default=False, index=True)
+    matched_keywords = Column(JSON)
+    fetched_date = Column(String)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 # ─────────────────────────────────────────────────────────────

@@ -58,9 +58,9 @@ export default function LoginForm() {
         
         //  Редирект в зависимости от роли
         if (data.user?.role === "admin") {
-          navigate("/otipb/main"); // вкладка "Главная" для админа
+          navigate("/"); // вкладка "Главная" для админа
         } else {
-          navigate("/otipb/audit"); // стандартный маршрут для аудитора
+          navigate("/"); // стандартный маршрут для аудитора
         }
       } else {
         setError(data.detail || "Неверный логин или пароль");

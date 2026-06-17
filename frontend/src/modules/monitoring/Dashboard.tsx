@@ -11,6 +11,7 @@ import { PolymerChart } from "./components/PolymerChart";
 import { DiffWidget } from "./components/DiffWidget";
 import { OurTkVsAllChart } from "./components/OurTKVsAllChart";
 import { ProfiledGostChart } from "./components/ProfiledGostChart";
+import { NpaTable } from "./components/NpaTable";
 
 export const MonitoringDashboard: React.FC = () => {
   const { isAuthenticated, hasPermission } = useAuth();
@@ -19,7 +20,7 @@ export const MonitoringDashboard: React.FC = () => {
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [scraping, setScraping] = useState(false);
-  const [activeTab, setActiveTab] = useState<"overview" | "gost" | "sp" | "tks">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "gost" | "sp" | "npa" | "tks">("overview");
   const [error, setError] = useState("");
   const [lastScrapeResult, setLastScrapeResult] = useState<ScrapingResult | null>(null);
   
@@ -145,6 +146,7 @@ export const MonitoringDashboard: React.FC = () => {
     { key: "overview" as const, label: "Обзор" },
     { key: "gost" as const, label: `ГОСТы (${data.stats.total_gost})` },
     { key: "sp" as const, label: `Своды правил (${data.stats.total_sp})` },
+    { key: "npa" as const, label: `НПА (${data.stats.total_npa})` },
     { key: "tks" as const, label: "Участвуем в ТК" },
   ];
 
@@ -190,6 +192,7 @@ export const MonitoringDashboard: React.FC = () => {
         <DiffWidget 
           gostData={data.gost} 
           spData={data.sp} 
+          npaData={data.npa} 
           isMyTk={isMyTk}
           lastScrapeResult={lastScrapeResult}
         />
@@ -346,6 +349,7 @@ export const MonitoringDashboard: React.FC = () => {
           </div>
         )}
         {activeTab === "sp" && <SpTable data={data.sp} />}
+        {activeTab === "npa" && <NpaTable data={data.npa} />}
         {activeTab === "tks" && (
           <OurTkTable data={data.gost} myTks={data.my_tks} isMyTk={isMyTk} />
         )}

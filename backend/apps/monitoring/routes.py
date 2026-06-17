@@ -9,12 +9,12 @@ import logging
 
 from .database import (
     get_db, GostNotification, SpNotification,
-    TechnicalCommittee, ScrapingLog,
+    TechnicalCommittee, ScrapingLog, NpaProject
 )
 from .schemas import (
     GostNotificationOut, SpNotificationOut,
     TechnicalCommitteeOut, TechnicalCommitteeCreate,
-    DashboardResponse, DashboardStats, ScrapingResponse, ScrapingLogOut,
+    DashboardResponse, DashboardStats, ScrapingResponse, ScrapingLogOut, NpaProjectOut
 )
 from .polymer_filter import is_polymer_related, get_matched_keywords
 from .scraper import is_in_date_range
@@ -33,9 +33,12 @@ def _get_current_year() -> int:
 
 
 def _extract_year(date_str: Optional[str]) -> Optional[int]:
+    """Извлекает год из строки даты в различных форматах."""
     if not date_str:
         return None
     s = str(date_str).strip()
+    
+    # Формат DD.MM.YYYY или DD.MM.YY
     if "." in s:
         parts = s.split(".")
         if len(parts) == 3:
@@ -43,17 +46,35 @@ def _extract_year(date_str: Optional[str]) -> Optional[int]:
                 return int(parts[2]) if len(parts[2]) == 4 else int("20" + parts[2])
             except ValueError:
                 return None
+        elif len(parts) == 2:
+            try:
+                return int(parts[1]) if len(parts[1]) == 4 else int("20" + parts[1])
+            except ValueError:
+                return None
+    
+    # Формат YYYY-MM-DD
     elif "-" in s:
         try:
             return int(s.split("-")[0])
         except ValueError:
             return None
+    
+    # Русский формат: "17 июня 2026"
+    else:
+        parts = s.split()
+        if len(parts) == 3:
+            try:
+                return int(parts[2])
+            except ValueError:
+                return None
+    
     return None
 
 
 def _compute_stats(
     gost_list: List[GostNotification],
     sp_list: List[SpNotification],
+    npa_list: List[NpaProject],
 ) -> DashboardStats:
     month_counter = Counter()
     tk_counter = Counter()
@@ -93,6 +114,7 @@ def _compute_stats(
 
     return DashboardStats(
         total_gost=len(gost_list),
+        total_npa=len(npa_list),
         total_sp=len(sp_list),
         active_count=active,
         completed_count=len(gost_list) - active,
@@ -119,8 +141,11 @@ def get_dashboard(year: Optional[int] = None, db: Session = Depends(get_db)):
 
     all_sp = db.query(SpNotification).all()
     sp = [s for s in all_sp if _extract_year(s.placement_date) == target_year]
+    
+    all_npa = db.query(NpaProject).all()
+    npa = [n for n in all_npa if _extract_year(n.published_date) == target_year]
 
-    stats = _compute_stats(gost, sp)
+    stats = _compute_stats(gost, sp, npa)
 
     # ← ИСПОЛЬЗУЕМ СПИСОК ИЗ КОНФИГА
     my_tks = OUR_TECHNICAL_COMMITTEES
@@ -139,6 +164,7 @@ def get_dashboard(year: Optional[int] = None, db: Session = Depends(get_db)):
     return DashboardResponse(
         gost=[GostNotificationOut.model_validate(g) for g in gost],
         sp=[SpNotificationOut.model_validate(s) for s in sp],
+        npa=[NpaProjectOut.model_validate(n) for n in npa],
         stats=stats,
         my_tks=my_tks,  # ← Просто возвращаем список из конфига
         last_updated=last_updated,
@@ -228,7 +254,7 @@ def run_scraping(
     x_user_role: Optional[str] = Header(default=None, alias="X-User-Role"),
     db: Session = Depends(get_db),
 ):
-    """Запускает парсинг СП + ГОСТ."""
+    """Запускает парсинг СП + ГОСТ + НПА."""
     is_admin = (x_user_role == "admin")
     
     if (date_from or date_to or year) and not is_admin:
@@ -251,9 +277,14 @@ def run_scraping(
     db.commit()
     db.refresh(log)
 
+    # ✅ ИНИЦИАЛИЗИРУЕМ все счётчики и списки в начале
     new_gost_ids = []
     new_sp_ids = []
+    new_npa_ids = []
     updated_statuses = []
+    gost_new_count = 0
+    sp_new_count = 0
+    npa_new_count = 0
 
     try:
         from .scraper import (
@@ -266,8 +297,6 @@ def run_scraping(
         sp_session = create_sp_session()
         gost_session = create_gost_session()
         today = datetime.now().strftime("%Y-%m-%d")
-        sp_new_count = 0
-        gost_new_count = 0
 
         # ── 1. ПАРСИНГ СП ──────────────────────────────────
         logger.info("🕸️ Начинаем парсинг СП (rst.gov.ru)...")
@@ -310,7 +339,6 @@ def run_scraping(
                         fetched_date=today,
                     )
                     
-                    # Используем savepoint для безопасной вставки
                     db.add(sp_obj)
                     try:
                         with db.begin_nested():
@@ -344,6 +372,7 @@ def run_scraping(
                     if not is_in_date_range(n.get("start_date"), date_from, date_to):
                         continue
                 
+                # Проверяем, существует ли запись
                 if n["id"] in existing_gost_ids:
                     # Проверяем изменение статуса
                     existing = db.query(GostNotification).filter_by(id=n["id"]).first()
@@ -379,16 +408,23 @@ def run_scraping(
                     fetched_date=n.get("fetched_date", today),
                 )
                 
-                # ✅ ИСПОЛЬЗУЕМ SAVEPOINT для безопасной вставки
-                db.add(g_obj)
-                try:
-                    with db.begin_nested():  # ← savepoint
-                        db.flush()
-                    new_gost_ids.append(n["id"])
-                    gost_new_count += 1
-                except IntegrityError:
-                    logger.warning(f"⚠️ ГОСТ {n['id']} уже существует, пропускаем")
+                # ✅ ПРОВЕРЯЕМ перед добавлением
+                if db.query(GostNotification).filter_by(id=n["id"]).first():
+                    logger.debug(f"ГОСТ {n['id']} уже существует, пропускаем")
                     continue
+                
+                db.add(g_obj)
+                new_gost_ids.append(n["id"])
+                gost_new_count += 1
+                
+                # Коммитим каждую 50-ю запись для экономии памяти
+                if gost_new_count % 50 == 0:
+                    db.commit()
+                    logger.info(f"💾 Сохранено {gost_new_count} записей ГОСТ...")
+                    # Обновляем множество существующих ID
+                    existing_gost_ids = {
+                        row[0] for row in db.query(GostNotification.id).all()
+                    }
             
             logger.info(f"✅ ГОСТ обработано. Новых: {gost_new_count}")
         except KeyboardInterrupt:
@@ -396,7 +432,63 @@ def run_scraping(
             raise
         except Exception as e:
             logger.error(f"❌ Ошибка при парсинге ГОСТ: {e}", exc_info=True)
-
+            # Откатываем транзакцию при ошибке
+            db.rollback()
+        
+        # ── 3. ПАРСИНГ НПА ─────────────────────────────────
+        logger.info("🕸️ Начинаем парсинг НПА (regulation.gov.ru)...")
+        try:
+            from .npa_scraper import create_npa_session, fetch_npa_projects
+            
+            npa_session = create_npa_session()
+            existing_npa_ids = {
+                row[0] for row in db.query(NpaProject.id).all()
+            }
+            logger.info(f"📋 В БД уже есть {len(existing_npa_ids)} записей НПА")
+            
+            npa_raw = fetch_npa_projects(npa_session, max_pages=50)
+            logger.info(f"📥 Получено {len(npa_raw)} записей НПА")
+            
+            for n in npa_raw:
+                if n["id"] in existing_npa_ids:
+                    continue
+                
+                is_poly = is_polymer_related(n)
+                keywords = get_matched_keywords(n) if is_poly else []
+                
+                npa_obj = NpaProject(
+                    id=n["id"],
+                    title=n.get("title", ""),
+                    developer=n.get("developer", ""),
+                    doc_type=n.get("doc_type", ""),
+                    created_date=n.get("created_date", ""),
+                    published_date=n.get("published_date", ""),
+                    stage=n.get("stage", ""),
+                    status=n.get("status", ""),
+                    procedure=n.get("procedure", ""),
+                    url=n.get("url", ""),
+                    is_polymer=is_poly,
+                    matched_keywords=keywords,
+                    fetched_date=today,
+                )
+                
+                db.add(npa_obj)
+                try:
+                    with db.begin_nested():
+                        db.flush()
+                    new_npa_ids.append(n["id"])
+                    npa_new_count += 1
+                except IntegrityError:
+                    logger.warning(f"⚠️ НПА {n['id']} уже существует, пропускаем")
+                    continue
+            
+            logger.info(f"✅ НПА обработано. Новых: {npa_new_count}")
+        except KeyboardInterrupt:
+            logger.warning("⚠️ Парсинг НПА прерван пользователем (Ctrl+C)")
+            raise
+        except Exception as e:
+            logger.error(f"❌ Ошибка при парсинге НПА: {e}", exc_info=True)
+        
         db.commit()
 
         log.status = "success"
@@ -404,18 +496,25 @@ def run_scraping(
         log.sp_new = sp_new_count
         log.new_gost_ids = new_gost_ids
         log.new_sp_ids = new_sp_ids
+        log.new_npa_ids = new_npa_ids  # ← ДОБАВЛЕНО
+        log.npa_new = npa_new_count    # ← ДОБАВЛЕНО
         log.updated_statuses = updated_statuses
         log.finished_at = datetime.now(timezone.utc)
         db.commit()
 
-        logger.info(f"🎉 Скрапинг завершён: ГОСТ +{gost_new_count}, СП +{sp_new_count}")
+        logger.info(
+            f"🎉 Скрапинг завершён: "
+            f"ГОСТ +{gost_new_count}, СП +{sp_new_count}, НПА +{npa_new_count}"
+        )
         return ScrapingResponse(
             status="success",
             gost_new=gost_new_count,
             sp_new=sp_new_count,
-            message=f"Готово! Добавлено: {gost_new_count} ГОСТ, {sp_new_count} СП",
+            npa_new=npa_new_count,
+            message=f"Готово! Добавлено: {gost_new_count} ГОСТ, {sp_new_count} СП, {npa_new_count} НПА",
             new_gost_ids=new_gost_ids,
             new_sp_ids=new_sp_ids,
+            new_npa_ids=new_npa_ids,
             updated_statuses=updated_statuses,
         )
 
@@ -435,3 +534,25 @@ def run_scraping(
         log.finished_at = datetime.now(timezone.utc)
         db.commit()
         raise HTTPException(status_code=500, detail=f"Ошибка скрапинга: {e}")
+
+@router.get("/npa", response_model=List[NpaProjectOut])
+def list_npa(
+    year: Optional[int] = None,
+    status: Optional[str] = None,
+    developer: Optional[str] = None,
+    is_polymer: Optional[bool] = None,
+    limit: int = Query(default=500, le=5000),
+    db: Session = Depends(get_db),
+):
+    q = db.query(NpaProject)
+    if year:
+        all_items = q.all()
+        all_items = [n for n in all_items if _extract_year(n.published_date) == year]
+        return all_items[:limit]
+    if status:
+        q = q.filter(NpaProject.status == status)
+    if developer:
+        q = q.filter(NpaProject.developer.ilike(f"%{developer}%"))
+    if is_polymer is not None:
+        q = q.filter(NpaProject.is_polymer == is_polymer)
+    return q.order_by(NpaProject.created_at.desc()).limit(limit).all()

@@ -1,13 +1,19 @@
 import React from "react";
 import DataTable from "react-data-table-component";
 import type { TableColumn } from "react-data-table-component";
-import type { ScrapingResult, GostNotification, SpNotification } from "../../../api/monitoring/api";
+import type { 
+  ScrapingResult, 
+  GostNotification, 
+  SpNotification, 
+  NpaProject 
+} from "../../../api/monitoring/api";
 
 interface DiffWidgetProps {
   gostData: GostNotification[];
   spData: SpNotification[];
+  npaData: NpaProject[];  // ← НОВОЕ
   isMyTk: (tk: string | null) => boolean;
-  lastScrapeResult: ScrapingResult | null;  // ← НОВЫЙ PROP
+  lastScrapeResult: ScrapingResult | null;
 }
 
 // ── Бейдж статуса ГОСТ ─────────────────────────────────────
@@ -18,12 +24,14 @@ const StatusBadge: React.FC<{ status: string | null }> = ({ status }) => {
     "Продлен срок публичного обсуждения": { bg: "#e67e22", label: "Продлено" },
     "На доработке": { bg: "#8e44ad", label: "Доработка" },
     "Направлено уведомление о завершении публичного обсуждения": { bg: "#01313D", label: "Уведомление" },
+    "Идет обсуждение": { bg: "#008B92", label: "Идет обсуждение" },
+    "Обсуждение завершено": { bg: "#95a5a6", label: "Завершено" },
   };
   const s = map[status || ""] || { bg: "#6c757d", label: status || "—" };
   return (
     <span style={{
-      background: s.bg, color: "#fff", padding: "3px 10px",
-      borderRadius: 12, fontSize: "0.75rem", fontWeight: 500,
+      background: s.bg, color: "#fff", padding: "4px 12px",
+      borderRadius: 12, fontSize: "0.75rem", fontWeight: 600,
     }}>
       {s.label}
     </span>
@@ -42,23 +50,26 @@ const parseDate = (d: string | null): number => {
 export const DiffWidget: React.FC<DiffWidgetProps> = ({ 
   gostData, 
   spData, 
+  npaData,  // ← НОВОЕ
   isMyTk,
-  lastScrapeResult,  // ← ИСПОЛЬЗУЕМ переданные данные
+  lastScrapeResult,
 }) => {
   const [expanded, setExpanded] = React.useState(false);
-  const [subTab, setSubTab] = React.useState<"gost" | "sp" | "changes">("gost");
+  const [subTab, setSubTab] = React.useState<"gost" | "sp" | "npa" | "changes">("gost");
 
   // Используем данные из последнего скрапинга ИЛИ загружаем из API (фоллбэк)
   const log = lastScrapeResult ? {
     gost_new: lastScrapeResult.gost_new,
     sp_new: lastScrapeResult.sp_new,
+    npa_new: lastScrapeResult.npa_new || 0,  // ← НОВОЕ
     new_gost_ids: lastScrapeResult.new_gost_ids,
     new_sp_ids: lastScrapeResult.new_sp_ids,
+    new_npa_ids: lastScrapeResult.new_npa_ids || [],  // ← НОВОЕ
     updated_statuses: lastScrapeResult.updated_statuses,
-    finished_at: new Date().toISOString(),  // текущее время
+    finished_at: new Date().toISOString(),
   } : null;
 
-  // Фильтруем новые ГОСТы и СП из общих данных
+  // Фильтруем новые записи
   const newGosts = React.useMemo(() => {
     if (!log?.new_gost_ids?.length) return [];
     const idSet = new Set(log.new_gost_ids);
@@ -71,7 +82,13 @@ export const DiffWidget: React.FC<DiffWidgetProps> = ({
     return spData.filter(s => idSet.has(s.id));
   }, [log, spData]);
 
-  const hasChanges = (log?.gost_new ?? 0) > 0 || (log?.sp_new ?? 0) > 0 || (log?.updated_statuses?.length ?? 0) > 0;
+  const newNpas = React.useMemo(() => {
+    if (!log?.new_npa_ids?.length) return [];
+    const idSet = new Set(log.new_npa_ids);
+    return npaData.filter(n => idSet.has(n.id));
+  }, [log, npaData]);
+
+  const hasChanges = (log?.gost_new ?? 0) > 0 || (log?.sp_new ?? 0) > 0 || (log?.npa_new ?? 0) > 0 || (log?.updated_statuses?.length ?? 0) > 0;
 
   if (!log || !hasChanges) {
     return null;
@@ -81,6 +98,55 @@ export const DiffWidget: React.FC<DiffWidgetProps> = ({
     day: "2-digit", month: "2-digit", year: "numeric",
     hour: "2-digit", minute: "2-digit"
   });
+
+  // ── Колонки для НПА ──────────────────────────────────────
+  const npaColumns: TableColumn<NpaProject>[] = [
+    {
+      name: "ID проекта",
+      selector: r => r.id || "—",
+      width: "160px",
+      sortable: true,
+      cell: r => <code style={{ fontSize: "0.75rem", background: "#f0f0f0", padding: "2px 6px", borderRadius: 4 }}>{r.id || "—"}</code>
+    },
+    {
+      name: "Наименование",
+      selector: r => r.title || "—",
+      grow: 2,
+      sortable: true,
+      cell: r => (
+        <a href={r.url || "#"} target="_blank" rel="noreferrer"
+           style={{ color: "#006b70", textDecoration: "none", fontWeight: 500 }}>
+          {r.title || "—"}
+        </a>
+      )
+    },
+    {
+      name: "Разработчик",
+      selector: r => r.developer || "—",
+      width: "200px",
+      sortable: true,
+    },
+    {
+      name: "Вид",
+      selector: r => r.doc_type || "—",
+      width: "180px",
+      sortable: true,
+    },
+    {
+      name: "Дата публикации",
+      selector: r => r.published_date || "—",
+      width: "140px",
+      sortable: true,
+      sortFunction: (a, b) => parseDate(a.published_date) - parseDate(b.published_date),
+    },
+    {
+      name: "Статус",
+      selector: r => r.status || "—",
+      width: "160px",
+      sortable: true,
+      cell: r => <StatusBadge status={r.status} />
+    },
+  ];
 
   // ── Колонки для новых ГОСТов ─────────────────────────────
   const gostColumns: TableColumn<GostNotification>[] = [
@@ -236,6 +302,16 @@ export const DiffWidget: React.FC<DiffWidgetProps> = ({
                   +{log.sp_new} новых СП
                 </div>
               )}
+              {(log.npa_new ?? 0) > 0 && (  // ← НОВОЕ
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  background: "#e8f5e9", color: "#2e7d32",
+                  padding: "4px 12px", borderRadius: 16, fontSize: "0.85rem", fontWeight: 600,
+                }}>
+                  <span style={{ fontSize: "1rem" }}>✨</span>
+                  +{log.npa_new} новых НПА
+                </div>
+              )}
               {(log.updated_statuses?.length ?? 0) > 0 && (
                 <div style={{
                   display: "flex", alignItems: "center", gap: 6,
@@ -270,6 +346,7 @@ export const DiffWidget: React.FC<DiffWidgetProps> = ({
             gap: 8,
             marginBottom: 16,
             borderBottom: "1px solid #eee",
+            flexWrap: "wrap",
           }}>
             {(log.gost_new ?? 0) > 0 && (
               <button
@@ -305,6 +382,24 @@ export const DiffWidget: React.FC<DiffWidgetProps> = ({
                 }}
               >
                 ✨ Новые СП ({log.sp_new})
+              </button>
+            )}
+            {(log.npa_new ?? 0) > 0 && (  // ← НОВОЕ
+              <button
+                onClick={() => setSubTab("npa")}
+                style={{
+                  padding: "8px 16px",
+                  background: subTab === "npa" ? "#008B92" : "transparent",
+                  color: subTab === "npa" ? "#fff" : "#555",
+                  border: "none",
+                  borderRadius: "8px 8px 0 0",
+                  cursor: "pointer",
+                  fontSize: "0.9rem",
+                  fontWeight: subTab === "npa" ? 600 : 400,
+                  transition: "all 0.2s",
+                }}
+              >
+                ✨ Новые НПА ({log.npa_new})
               </button>
             )}
             {(log.updated_statuses?.length ?? 0) > 0 && (
@@ -388,6 +483,37 @@ export const DiffWidget: React.FC<DiffWidgetProps> = ({
                 paginationPerPage={10}
                 highlightOnHover
                 defaultSortFieldId={4}
+                defaultSortAsc={false}
+                noDataComponent={<div style={{ padding: 20, color: "#999" }}>Нет данных</div>}
+              />
+            </div>
+          )}
+
+          {subTab === "npa" && newNpas.length > 0 && (  // ← НОВОЕ
+            <div style={{
+              background: "#fafbfc",
+              borderRadius: 8,
+              padding: 12,
+              border: "1px solid #eee",
+            }}>
+              <div style={{
+                background: "#e8f5e9",
+                color: "#2e7d32",
+                padding: "8px 12px",
+                borderRadius: 6,
+                marginBottom: 12,
+                fontSize: "0.85rem",
+                fontWeight: 500,
+              }}>
+                💡 Добавлено {newNpas.length} новых НПА в последнем обновлении
+              </div>
+              <DataTable
+                columns={npaColumns}
+                data={newNpas}
+                pagination
+                paginationPerPage={10}
+                highlightOnHover
+                defaultSortFieldId={5}
                 defaultSortAsc={false}
                 noDataComponent={<div style={{ padding: 20, color: "#999" }}>Нет данных</div>}
               />

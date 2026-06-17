@@ -14,9 +14,10 @@ const Card: React.FC<{ value: number; label: string; color: string }> = ({ value
 );
 
 export const StatsCards: React.FC<Props> = ({ stats, currentYear }) => (
-  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
+  <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 16 }}>
     <Card value={stats.total_gost} label={`ГОСТов в ${currentYear}`} color="#008B92" />
     <Card value={stats.total_sp} label="Сводов правил" color="#01313D" />
+    <Card value={stats.total_npa} label="НПА" color="#8e44ad" /> 
     <Card value={stats.active_count} label="Активных обсуждений" color="#008B92" />
     <Card value={stats.completed_count} label="Завершённых" color="#95a5a6" />
   </div>

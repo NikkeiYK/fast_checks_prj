@@ -37,6 +37,7 @@ export interface DashboardStats {
   completed_count: number;
   polymer_total: number;
   polymer_commented: number;
+  total_npa: number;
   status_labels: string[];
   status_values: number[];
   month_labels: string[];
@@ -50,6 +51,7 @@ export interface DashboardResponse {
   sp: SpNotification[];
   stats: DashboardStats;
   my_tks: string[];
+  npa: NpaProject[];
   last_updated: string;
   current_year: number;
 }
@@ -61,6 +63,8 @@ export interface ScrapingResult {
   message: string;
   new_gost_ids: string[];
   new_sp_ids: string[];
+  npa_new: number;
+  new_npa_ids: string[];
   updated_statuses: Array<{
     id: string;
     type: "gost" | "sp";
@@ -137,6 +141,23 @@ class MonitoringAPI {
     }
     return res.json();
   }
+
+  
 }
 
 export const monitoringApi = new MonitoringAPI();
+
+export interface NpaProject {
+  id: string;
+  title: string | null;
+  developer: string | null;
+  doc_type: string | null;
+  created_date: string | null;
+  published_date: string | null;
+  stage: string | null;
+  status: string | null;
+  procedure: string | null;
+  url: string | null;
+  is_polymer: boolean;
+  matched_keywords: string[] | null;
+}

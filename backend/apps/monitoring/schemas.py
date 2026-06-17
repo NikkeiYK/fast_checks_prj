@@ -61,6 +61,7 @@ class TechnicalCommitteeCreate(BaseModel):
 class DashboardStats(BaseModel):
     total_gost: int
     total_sp: int
+    total_npa: int  # ← НОВОЕ
     active_count: int
     completed_count: int
     polymer_total: int
@@ -77,6 +78,7 @@ class DashboardResponse(BaseModel):
     gost: List[GostNotificationOut]
     sp: List[SpNotificationOut]
     stats: DashboardStats
+    npa: List[NpaProjectOut]
     my_tks: List[str]
     last_updated: str
     current_year: int
@@ -91,6 +93,8 @@ class ScrapingResponse(BaseModel):
     new_gost_ids: List[str] = []
     new_sp_ids: List[str] = []
     updated_statuses: List[dict] = []
+    new_npa_ids: List[str] = [] 
+    npa_new: int = 0
 
 
 class ScrapingLogOut(BaseModel):
@@ -103,6 +107,24 @@ class ScrapingLogOut(BaseModel):
     new_gost_ids: Optional[List[str]]
     new_sp_ids: Optional[List[str]]
     updated_statuses: Optional[List[dict]]
+
+    class Config:
+        from_attributes = True
+
+# ── НПА ──────────────────────────────────────────────────────
+class NpaProjectOut(BaseModel):
+    id: str
+    title: Optional[str] = None
+    developer: Optional[str] = None
+    doc_type: Optional[str] = None
+    created_date: Optional[str] = None
+    published_date: Optional[str] = None
+    stage: Optional[str] = None
+    status: Optional[str] = None
+    procedure: Optional[str] = None
+    url: Optional[str] = None
+    is_polymer: bool = False
+    matched_keywords: Optional[List[str]] = None
 
     class Config:
         from_attributes = True
