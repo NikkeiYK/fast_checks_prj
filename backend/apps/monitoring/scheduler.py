@@ -143,9 +143,9 @@ scheduler = BackgroundScheduler(timezone="Europe/Moscow")
 def start_scheduler():
     scheduler.add_job(
         run_daily_scraping,
-        CronTrigger(hour=13, minute=30, timezone="Europe/Moscow"),
+        CronTrigger(hour=9, minute=00, timezone="Europe/Moscow"),
         id="daily_monitoring_scraping",
-        name="Ежедневный парсинг Росстандарта (13:30 MSK)",
+        name="Ежедневный парсинг Росстандарта (9:00 MSK)",
         replace_existing=True,
     )
     scheduler.start()

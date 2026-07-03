@@ -71,7 +71,11 @@ def get_meta(db: Session = Depends(get_db)):
 @router.post("/api/employees/search")
 def search_employees(data: EmployeeSearch, db: Session = Depends(get_db)):
     if not data.query: return []
-    results = db.query(Employee).filter(Employee.fio.ilike(f"%{data.query}%")).limit(10).all()
+    # 🔹 Фильтруем ТОЛЬКО активных сотрудников
+    results = db.query(Employee).filter(
+        Employee.fio.ilike(f"%{data.query}%"),
+        Employee.is_active == 1
+    ).limit(10).all()
     return [{"id": r.id, "fio": r.fio, "department": r.department, "center": r.center} for r in results]
 
 @router.post("/api/employees/upsert")
@@ -149,6 +153,7 @@ def export_excel(auditor_fio: Optional[str] = Query(None), date_from: Optional[s
     filename = f"polilab_audit_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
     return StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f"attachment; filename={filename}"})
 
+# apps/audit/routes.py
 @router.post("/api/import-employees")
 async def import_employees(file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
@@ -156,38 +161,68 @@ async def import_employees(file: UploadFile = File(...), db: Session = Depends(g
         if not file.filename: raise HTTPException(400, detail="Файл не выбран")
         contents = await file.read()
         filename_lower = file.filename.lower()
+        
         if filename_lower.endswith('.xlsx'):
             try: df = pd.read_excel(io.BytesIO(contents), engine='openpyxl')
             except ImportError: df = pd.read_excel(io.BytesIO(contents), engine='calamine')
         elif filename_lower.endswith('.csv'): df = pd.read_csv(io.BytesIO(contents), encoding='utf-8-sig')
         else: raise HTTPException(400, detail="Только .xlsx и .csv")
+        
         df.columns = df.columns.str.strip().str.lower()
         col_map = {}
         for col in df.columns:
             if col in ('фио', 'fio', 'fullname'): col_map[col] = 'fio'
             elif col in ('центр', 'center', 'city'): col_map[col] = 'center'
             elif col in ('подразделение', 'department', 'dept'): col_map[col] = 'department'
+        
         if len(col_map) != 3: raise HTTPException(400, detail="Нужны колонки: ФИО, Центр, Подразделение")
         df.rename(columns=col_map, inplace=True)
+        
         for col in ['fio', 'center', 'department']: df[col] = df[col].astype(str).str.strip()
         df = df[(df['fio'] != '') & (df['center'] != '') & (df['department'] != '') & (df['fio'] != 'nan')].drop_duplicates(subset=['fio', 'center', 'department'])
+        
         file_keys = {(str(r['fio']).strip(), str(r['department']).strip(), str(r['center']).strip()) for _, r in df.iterrows() if str(r['fio']).strip() and str(r['fio']).lower() != 'nan'}
-        existing = {e.id: e for e in db.query(Employee).all()}
-        existing_map = {(e.fio, e.department, e.center): e for e in existing.values()}
-        added = sum(1 for k in file_keys if k not in existing_map)
+        
+        # 🔹 Шаг 1: Помечаем ВСЕХ сотрудников как неактивных
+        db.query(Employee).update({"is_active": 0})
+        
+        added = 0
+        updated = 0
+        
+        # 🔹 Шаг 2: Активируем или создаем сотрудников из файла
         for fio, dept, center in file_keys:
-            if (fio, dept, center) not in existing_map: db.add(Employee(fio=fio, department=dept, center=center))
-        removed = 0
-        for emp in existing.values():
-            if (emp.fio, emp.department, emp.center) not in file_keys:
-                db.query(AuditSession).filter(AuditSession.employee_id == emp.id).update({"employee_id": None}, synchronize_session=False)
-                db.delete(emp); removed += 1
+            emp = db.query(Employee).filter(
+                Employee.fio == fio, 
+                Employee.department == dept, 
+                Employee.center == center
+            ).first()
+            
+            if emp:
+                if emp.is_active == 0:
+                    emp.is_active = 1
+                    updated += 1
+            else:
+                db.add(Employee(fio=fio, department=dept, center=center, is_active=1))
+                added += 1
+        
         db.commit()
-        logger.info(f"🎉 Импорт: +{added}, -{removed}")
-        return {"message": "Справочник синхронизирован", "added": added, "removed": removed, "total_after": len(file_keys)}
+        
+        # 🔹 Шаг 3: Считаем статистику
+        total_active = db.query(Employee).filter(Employee.is_active == 1).count()
+        
+        logger.info(f"🎉 Импорт: +{added} новых, ~{updated} восстановлено, всего активно: {total_active}")
+        
+        return {
+            "message": "Справочник синхронизирован", 
+            "added": added, 
+            "updated": updated,
+            "total_active": total_active
+        }
+        
     except HTTPException: raise
     except Exception as e:
-        logger.error(f"💥 Ошибка импорта: {e}", exc_info=True); db.rollback()
+        logger.error(f"💥 Ошибка импорта: {e}", exc_info=True)
+        db.rollback()
         raise HTTPException(500, detail=f"Ошибка: {str(e)}")
 
 @router.get("/api/quarters")
@@ -196,32 +231,75 @@ def get_quarters(db: Session = Depends(get_db)):
 
 @router.get("/api/report/quarterly")
 def quarterly_report(quarter: str = Query(...), db: Session = Depends(get_db)):
-    employees = db.query(Employee).all()
+    # 🔹 Берем ТОЛЬКО активных сотрудников
+    employees = db.query(Employee).filter(Employee.is_active == 1).all()
+    
     sessions = db.query(AuditSession).filter(AuditSession.quarter == quarter).all()
     checked_ids = {s.employee_id for s in sessions if s.employee_id is not None}
+    
     centers_dict = {}
-    for c in CENTERS_LIST: centers_dict[c] = {"center": c, "total_employees": 0, "checked": 0, "not_checked": 0, "employees": []}
+    
     for emp in employees:
         c = emp.center
-        if c not in centers_dict: centers_dict[c] = {"center": c, "total_employees": 0, "checked": 0, "not_checked": 0, "employees": []}
+        if c not in centers_dict: 
+            centers_dict[c] = {"center": c, "total_employees": 0, "checked": 0, "not_checked": 0, "employees": []}
+        
         is_checked = emp.id in checked_ids
         centers_dict[c]["total_employees"] += 1
-        if is_checked: centers_dict[c]["checked"] += 1; centers_dict[c]["employees"].append({"fio": emp.fio, "department": emp.department, "status": "checked", "status_text": "Проверка пройдена"})
-        else: centers_dict[c]["not_checked"] += 1; centers_dict[c]["employees"].append({"fio": emp.fio, "department": emp.department, "status": "not_checked", "status_text": "Не проходил(а)"})
+        if is_checked: 
+            centers_dict[c]["checked"] += 1
+            centers_dict[c]["employees"].append({
+                "fio": emp.fio, 
+                "department": emp.department, 
+                "status": "checked", 
+                "status_text": "Проверка пройдена"
+            })
+        else: 
+            centers_dict[c]["not_checked"] += 1
+            centers_dict[c]["employees"].append({
+                "fio": emp.fio, 
+                "department": emp.department, 
+                "status": "not_checked", 
+                "status_text": "Не проходил(а)"
+            })
+    
     known = set(CENTERS_LIST)
-    return {"quarter": quarter, "centers": sorted(centers_dict.values(), key=lambda x: (0 if x["center"] in known else 1, x["center"]))}
+    return {
+        "quarter": quarter, 
+        "centers": sorted(
+            centers_dict.values(), 
+            key=lambda x: (0 if x["center"] in known else 1, x["center"])
+        )
+    }
 
 @router.get("/api/employees/not-checked")
-def get_employees_not_checked(quarter: Optional[str] = Query(None), center: Optional[str] = Query(None), department: Optional[str] = Query(None), fio: Optional[str] = Query(None), db: Session = Depends(get_db)):
-    query = db.query(Employee)
+def get_employees_not_checked(
+    quarter: Optional[str] = Query(None), 
+    center: Optional[str] = Query(None), 
+    department: Optional[str] = Query(None), 
+    fio: Optional[str] = Query(None), 
+    db: Session = Depends(get_db)
+):
+    # Фильтруем ТОЛЬКО активных сотрудников
+    query = db.query(Employee).filter(Employee.is_active == 1)
+    
     if fio: query = query.filter(Employee.fio.ilike(f"%{fio}%"))
     if center: query = query.filter(Employee.center == center)
     if department: query = query.filter(Employee.department == department)
+    
     all_emp = query.all()
+    
     if quarter:
-        checked = [r[0] for r in db.query(AuditSession.employee_id).filter(AuditSession.quarter == quarter, AuditSession.employee_id.isnot(None)).distinct().all() if r[0]]
+        checked = [
+            r[0] for r in db.query(AuditSession.employee_id)
+            .filter(AuditSession.quarter == quarter, AuditSession.employee_id.isnot(None))
+            .distinct().all() 
+            if r[0]
+        ]
         result = [e for e in all_emp if e.id not in checked]
-    else: result = all_emp
+    else: 
+        result = all_emp
+    
     return [{"id": e.id, "fio": e.fio, "center": e.center, "department": e.department} for e in result]
 
 @router.delete("/api/sessions/{session_id}")

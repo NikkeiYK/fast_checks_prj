@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { API } from "../../../config";
@@ -26,6 +27,19 @@ interface HistoryFilters {
   quarter: string;
 }
 
+// 🔹 Хелпер: вычисление текущего квартала
+const getCurrentQuarter = (): string => {
+  const now = new Date();
+  const q = Math.ceil((now.getMonth() + 1) / 3);
+  return `${now.getFullYear()}-Q${q}`;
+};
+
+// 🔹 Хелпер: построение URL для общего экспорта
+const getFullExportUrl = (quarter: string): string => {
+  const params = new URLSearchParams({ quarter });
+  return `${API.export}?${params}`;
+};
+
 export default function QuarterlyReport() {
   const [quarters, setQuarters] = useState<string[]>([]);
   const [selectedQuarter, setSelectedQuarter] = useState("");
@@ -50,22 +64,29 @@ export default function QuarterlyReport() {
       .get(API.quarters)
       .then((res) => {
         const data = Array.isArray(res.data) ? res.data : [];
-        setQuarters(data);
-        if (data.length > 0) setSelectedQuarter(data[0]);
+        const currentQ = getCurrentQuarter();
+        const quartersList = data.includes(currentQ) ? data : [currentQ, ...data];
+        setQuarters(quartersList);
+        if (quartersList.length > 0 && !selectedQuarter) {
+          setSelectedQuarter(quartersList[0]);
+        }
       })
       .catch(() => {
-        setQuarters([]);
-        setErrorMsg("Не удалось загрузить кварталы");
+        const currentQ = getCurrentQuarter();
+        setQuarters([currentQ]);
+        setSelectedQuarter(currentQ);
+        setErrorMsg("Не удалось загрузить кварталы, установлен текущий квартал");
       });
   }, []);
 
-  const loadReport = async () => {
-    if (!selectedQuarter) return;
+  const loadReport = async (quarterOverride?: string) => {
+    const q = quarterOverride || selectedQuarter;
+    if (!q) return;
     setLoading(true);
     setErrorMsg("");
     try {
       const res = await axios.get(API.quarterlyReport, {
-        params: { quarter: selectedQuarter },
+        params: { quarter: q },
       });
       setReport(res.data);
     } catch (err) {
@@ -145,13 +166,28 @@ export default function QuarterlyReport() {
     try {
       const res = await axios.post(API.importEmployees, formData);
       setImportMsg(
-        `✅ Справочник обновлён: добавлено ${res.data.added}, удалено ${res.data.removed}`
+        `✅ Справочник обновлён: добавлено ${res.data.added}, ` +
+        `восстановлено ${res.data.updated ?? 0}, ` +
+        `всего активно: ${res.data.total_active ?? "?"}`
       );
-      if (selectedQuarter) loadReport();
+      if (!selectedQuarter) {
+        const currentQ = getCurrentQuarter();
+        setSelectedQuarter(currentQ);
+      }
+      const quartersRes = await axios.get(API.quarters);
+      const data = Array.isArray(quartersRes.data) ? quartersRes.data : [];
+      const currentQ = getCurrentQuarter();
+      const quartersList = data.includes(currentQ) ? data : [currentQ, ...data];
+      setQuarters(quartersList);
+
+      await loadReport();
+      setTimeout(() => setImportMsg(""), 5000);
     } catch (err: any) {
       setImportMsg(
         `❌ Ошибка импорта: ${err.response?.data?.detail || err.message}`
       );
+    } finally {
+      e.target.value = "";
     }
   };
 
@@ -160,8 +196,9 @@ export default function QuarterlyReport() {
     try {
       await axios.delete(`${API.sessions}/${sessionId}`);
       if (expandedCenter && selectedQuarter) {
-        loadCenterHistory(expandedCenter, selectedQuarter, historyFilters);
+        await loadCenterHistory(expandedCenter, selectedQuarter, historyFilters);
       }
+      await loadReport();
     } catch (err: any) {
       alert(err.response?.data?.detail || "Ошибка удаления");
     }
@@ -229,9 +266,20 @@ export default function QuarterlyReport() {
             </option>
           ))}
         </select>
-        <button onClick={loadReport} disabled={loading} style={btnStyle}>
+        <button onClick={() => loadReport()} disabled={loading} style={btnStyle}>
           🔄 Обновить
         </button>
+        {/* 🔹 КНОПКА ЭКСПОРТА ВСЕХ ЦЕНТРОВ */}
+        {selectedQuarter && (
+          <a
+            href={getFullExportUrl(selectedQuarter)}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={exportAllBtnStyle}
+          >
+            📥 Выгрузить всё в Excel
+          </a>
+        )}
       </div>
 
       {loading && <p style={{ textAlign: "center" }}>Загрузка...</p>}
@@ -294,7 +342,7 @@ export default function QuarterlyReport() {
                               rel="noopener noreferrer"
                               style={exportBtnStyle}
                             >
-                              📥 Выгрузить Excel
+                              📥 Выгрузить этот центр
                             </a>
                           </div>
 
@@ -532,6 +580,23 @@ const btnStyle: React.CSSProperties = {
   borderRadius: 4,
   cursor: "pointer",
   fontSize: 14,
+};
+
+// 🔹 Стиль для кнопки "Выгрузить всё"
+const exportAllBtnStyle: React.CSSProperties = {
+  background: "#107c41",
+  color: "#fff",
+  padding: "8px 16px",
+  textDecoration: "none",
+  borderRadius: 6,
+  fontSize: 14,
+  fontWeight: 500,
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  marginLeft: 10,
+  transition: "background 0.2s",
+  cursor: "pointer",
 };
 
 const tableStyle: React.CSSProperties = {

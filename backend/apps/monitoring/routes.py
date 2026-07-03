@@ -14,10 +14,11 @@ from .database import (
 from .schemas import (
     GostNotificationOut, SpNotificationOut,
     TechnicalCommitteeOut, TechnicalCommitteeCreate,
-    DashboardResponse, DashboardStats, ScrapingResponse, ScrapingLogOut, NpaProjectOut
+    DashboardResponse, DashboardStats, ScrapingResponse, ScrapingLogOut, NpaProjectOut, ApprovedDiscussionOut
 )
 from .polymer_filter import is_polymer_related, get_matched_keywords
 from .scraper import is_in_date_range
+from .priority_filter import is_priority_developer
 
 logger = logging.getLogger(__name__)
 
@@ -130,26 +131,48 @@ def _compute_stats(
 
 
 @router.get("/dashboard", response_model=DashboardResponse)
-def get_dashboard(year: Optional[int] = None, db: Session = Depends(get_db)):
-    """Полные данные для дашборда."""
-    from .config import OUR_TECHNICAL_COMMITTEES
+def get_dashboard(
+    year: Optional[int] = None,
+    country: Optional[str] = Query(default=None, description="RU, KZ или all"),
+    db: Session = Depends(get_db),
+):
+    """Полные данные для дашборда с поддержкой фильтрации по стране."""
+    from .config import OUR_TECHNICAL_COMMITTEES, SUPPORTED_COUNTRIES
     
     target_year = year or _get_current_year()
-
-    all_gost = db.query(GostNotification).all()
+    
+    # Базовые запросы
+    q_gost = db.query(GostNotification)
+    q_sp = db.query(SpNotification)
+    q_npa = db.query(NpaProject)
+    
+    # Фильтр по стране
+    if country and country.lower() != "all":
+        country_upper = country.upper()
+        q_gost = q_gost.filter(GostNotification.country == country_upper)
+        q_sp = q_sp.filter(SpNotification.country == country_upper)
+        q_npa = q_npa.filter(NpaProject.country == country_upper)
+    
+    # Фильтр по году
+    all_gost = q_gost.all()
     gost = [g for g in all_gost if _extract_year(g.start_date) == target_year]
-
-    all_sp = db.query(SpNotification).all()
+    
+    all_sp = q_sp.all()
     sp = [s for s in all_sp if _extract_year(s.placement_date) == target_year]
     
-    all_npa = db.query(NpaProject).all()
+    all_npa = q_npa.all()
     npa = [n for n in all_npa if _extract_year(n.published_date) == target_year]
-
+    
     stats = _compute_stats(gost, sp, npa)
-
-    # ← ИСПОЛЬЗУЕМ СПИСОК ИЗ КОНФИГА
+    
+    # Доступные страны
+    available_countries = [
+        {"code": code, **info}
+        for code, info in SUPPORTED_COUNTRIES.items()
+    ]
+    
     my_tks = OUR_TECHNICAL_COMMITTEES
-
+    
     last_log = (
         db.query(ScrapingLog)
         .filter_by(status="success")
@@ -160,15 +183,16 @@ def get_dashboard(year: Optional[int] = None, db: Session = Depends(get_db)):
         last_updated = last_log.finished_at.strftime("%d.%m.%Y %H:%M")
     else:
         last_updated = "—"
-
+    
     return DashboardResponse(
         gost=[GostNotificationOut.model_validate(g) for g in gost],
         sp=[SpNotificationOut.model_validate(s) for s in sp],
         npa=[NpaProjectOut.model_validate(n) for n in npa],
         stats=stats,
-        my_tks=my_tks,  # ← Просто возвращаем список из конфига
+        my_tks=my_tks,
         last_updated=last_updated,
         current_year=target_year,
+        available_countries=available_countries,
     )
 
 
@@ -247,7 +271,9 @@ def get_last_scraping_log(db: Session = Depends(get_db)):
 
 @router.post("/scrape", response_model=ScrapingResponse)
 def run_scraping(
-    full_backfill: bool = Query(default=True),
+    full_backfill: bool = Query(default=False),
+    incremental: bool = Query(default=True),
+    country: str = Query(default="all", description="RU, KZ, BY, UZ или all"),
     date_from: Optional[str] = Query(default=None),
     date_to: Optional[str] = Query(default=None),
     year: Optional[int] = Query(default=None),
@@ -285,6 +311,9 @@ def run_scraping(
     gost_new_count = 0
     sp_new_count = 0
     npa_new_count = 0
+    kz_new_count = 0  
+    by_new_count = 0  
+    uz_new_count = 0 
 
     try:
         from .scraper import (
@@ -327,6 +356,7 @@ def run_scraping(
                     
                     sp_obj = SpNotification(
                         id=n["id"],
+                        country="RU", 
                         notification_type=merged.get("notification_type", ""),
                         doc_type=merged.get("doc_type", ""),
                         project_name=merged.get("project_name", ""),
@@ -404,6 +434,7 @@ def run_scraping(
                     status=n.get("status", ""),
                     url=n.get("url", ""),
                     is_polymer=is_poly,
+                    country="RU",
                     matched_keywords=keywords,
                     fetched_date=n.get("fetched_date", today),
                 )
@@ -458,6 +489,7 @@ def run_scraping(
                 
                 npa_obj = NpaProject(
                     id=n["id"],
+                    country="RU",
                     title=n.get("title", ""),
                     developer=n.get("developer", ""),
                     doc_type=n.get("doc_type", ""),
@@ -470,6 +502,7 @@ def run_scraping(
                     is_polymer=is_poly,
                     matched_keywords=keywords,
                     fetched_date=today,
+                    is_priority=is_priority_developer(n.get("developer", "")),
                 )
                 
                 db.add(npa_obj)
@@ -488,7 +521,250 @@ def run_scraping(
             raise
         except Exception as e:
             logger.error(f"❌ Ошибка при парсинге НПА: {e}", exc_info=True)
+            
+        # ── 4. ПАРСИНГ СТ РК (КАЗАХСТАН) ─────────────────────
+        logger.info("🇰🇿 Начинаем парсинг СТ РК (Казахстан)...")
+        try:
+            from .kz_gost_scraper import create_kz_session, fetch_kz_gost_notifications
+            
+            kz_session = create_kz_session()
+            existing_kz_ids = {
+                row[0] for row in db.query(GostNotification.id)
+                .filter(GostNotification.country == "KZ").all()
+            }
+            logger.info(f"📋 В БД уже есть {len(existing_kz_ids)} записей СТ РК")
+            
+            target_year = year or datetime.now().year
+            kz_raw = fetch_kz_gost_notifications(kz_session, year=target_year, max_pages=50)
+            logger.info(f"📥 Получено {len(kz_raw)} записей СТ РК")
+            
+            # ✅ УБИРАЕМ ДУБЛИКАТЫ внутри данных парсера
+            seen_kz_ids = set()
+            kz_unique = []
+            for n in kz_raw:
+                if n["id"] in seen_kz_ids:
+                    logger.debug(f"⚠️ Дубликат СТ РК {n['id']}, пропускаем")
+                    continue
+                seen_kz_ids.add(n["id"])
+                kz_unique.append(n)
+            
+            logger.info(f"📊 После удаления дубликатов: {len(kz_unique)} уникальных записей")
+            
+            kz_new_count = 0
+            for n in kz_unique:
+                # Пропускаем уже существующие в БД
+                if n["id"] in existing_kz_ids:
+                    continue
+                
+                # ✅ ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА перед добавлением
+                if db.query(GostNotification).filter_by(id=n["id"]).first():
+                    logger.debug(f"⚠️ СТ РК {n['id']} уже существует в БД, пропускаем")
+                    existing_kz_ids.add(n["id"])
+                    continue
+                
+                is_poly = is_polymer_related(n)
+                keywords = get_matched_keywords(n) if is_poly else []
+                
+                kz_obj = GostNotification(
+                    id=n["id"],
+                    country="KZ",
+                    prns_code=n.get("prns_code", ""),
+                    doc_type=n.get("doc_type", "СТ РК"),
+                    project_name=n.get("project_name", ""),
+                    technical_committee=n.get("technical_committee", ""),
+                    developer=n.get("developer", ""),
+                    start_date=n.get("start_date", ""),
+                    end_date=n.get("end_date"),
+                    status=n.get("status", ""),
+                    url=n.get("url", ""),
+                    is_polymer=is_poly,
+                    matched_keywords=keywords,
+                    fetched_date=n.get("fetched_date", today),
+                )
+                
+                db.add(kz_obj)
+                new_gost_ids.append(n["id"])
+                existing_kz_ids.add(n["id"])
+                kz_new_count += 1
+                gost_new_count += 1
+                
+                # Коммитим каждую 20-ю запись для экономии памяти
+                if kz_new_count % 20 == 0:
+                    try:
+                        db.commit()
+                        logger.info(f"💾 Сохранено {kz_new_count} записей СТ РК...")
+                    except Exception as e:
+                        logger.error(f"❌ Ошибка коммита СТ РК: {e}")
+                        db.rollback()
+                
+                
+            
+            logger.info(f"✅ СТ РК обработано. Новых: {kz_new_count}")
+        except KeyboardInterrupt:
+            logger.warning("⚠️ Парсинг СТ РК прерван пользователем (Ctrl+C)")
+            raise
+        except Exception as e:
+            logger.error(f"❌ Ошибка при парсинге СТ РК: {e}", exc_info=True)
+            # ✅ ВАЖНО: откатываем транзакцию при ошибке
+            try:
+                db.rollback()
+            except:
+                pass
         
+        # ── 5. ПАРСИНГ STB (БЕЛАРУСЬ) ─────────────────────
+        logger.info("🇧🇾 Начинаем парсинг STB (Беларусь)...")
+        try:
+            from .by_gost_scraper import create_by_session, fetch_by_gost_notifications
+            
+            by_session = create_by_session()
+            existing_by_ids = {
+                row[0] for row in db.query(GostNotification.id)
+                .filter(GostNotification.country == "BY").all()
+            }
+            logger.info(f"📋 В БД уже есть {len(existing_by_ids)} записей STB")
+            
+            target_year = year or datetime.now().year
+            by_raw = fetch_by_gost_notifications(by_session, year=target_year, max_retries=3)
+            logger.info(f"📥 Получено {len(by_raw)} записей STB")
+            
+            # Убираем дубликаты внутри данных парсера
+            seen_by_ids = set()
+            by_unique = []
+            for n in by_raw:
+                if n["id"] in seen_by_ids:
+                    logger.debug(f"⚠️ Дубликат STB {n['id']}, пропускаем")
+                    continue
+                seen_by_ids.add(n["id"])
+                by_unique.append(n)
+            
+            logger.info(f"📊 После удаления дубликатов: {len(by_unique)} уникальных записей")
+            
+            by_new_count = 0
+            for n in by_unique:
+                if n["id"] in existing_by_ids:
+                    continue
+                
+                if db.query(GostNotification).filter_by(id=n["id"]).first():
+                    logger.debug(f"⚠️ STB {n['id']} уже существует в БД, пропускаем")
+                    existing_by_ids.add(n["id"])
+                    continue
+                
+                is_poly = is_polymer_related(n)
+                keywords = get_matched_keywords(n) if is_poly else []
+                
+                by_obj = GostNotification(
+                    id=n["id"],
+                    country="BY",
+                    prns_code=n.get("prns_code", ""),
+                    doc_type=n.get("doc_type", ""),
+                    project_name=n.get("project_name", ""),
+                    technical_committee=n.get("technical_committee", ""),
+                    developer=n.get("developer", ""),
+                    start_date=n.get("start_date", ""),
+                    end_date=n.get("end_date"),
+                    status=n.get("status", ""),
+                    url=n.get("url", ""),
+                    is_polymer=is_poly,
+                    matched_keywords=keywords,
+                    fetched_date=n.get("fetched_date", today),
+                )
+                
+                db.add(by_obj)
+                new_gost_ids.append(n["id"])
+                existing_by_ids.add(n["id"])
+                by_new_count += 1
+                gost_new_count += 1
+                
+                if by_new_count % 20 == 0:
+                    try:
+                        db.commit()
+                        logger.info(f"💾 Сохранено {by_new_count} записей STB...")
+                    except Exception as e:
+                        logger.error(f"❌ Ошибка коммита STB: {e}")
+                        db.rollback()
+            
+            logger.info(f"✅ STB обработано. Новых: {by_new_count}")
+        except KeyboardInterrupt:
+            logger.warning("⚠️ Парсинг STB прерван пользователем (Ctrl+C)")
+            raise
+        except Exception as e:
+            logger.error(f"❌ Ошибка при парсинге STB: {e}", exc_info=True)
+            try:
+                db.rollback()
+            except:
+                pass
+        
+        # ── 6. ПАРСИНГ UZSTI (УЗБЕКИСТАН) ─────────────────────
+        logger.info("🇺🇿 Начинаем парсинг UZSTI (Узбекистан)...")
+        try:
+            from .uz_gost_scraper import create_uz_session, fetch_uz_gost_notifications
+            
+            uz_session = create_uz_session()
+            existing_uz_ids = {
+                row[0] for row in db.query(GostNotification.id)
+                .filter(GostNotification.country == "UZ").all()
+            }
+            logger.info(f"📋 В БД уже есть {len(existing_uz_ids)} записей UZSTI")
+            
+            target_year = year or datetime.now().year
+            uz_raw = fetch_uz_gost_notifications(uz_session, year=target_year)
+            logger.info(f"📥 Получено {len(uz_raw)} записей UZSTI")
+            
+            uz_new_count = 0
+            for n in uz_raw:
+                if n["id"] in existing_uz_ids:
+                    continue
+                
+                if db.query(GostNotification).filter_by(id=n["id"]).first():
+                    logger.debug(f"⚠️ UZSTI {n['id']} уже существует в БД, пропускаем")
+                    existing_uz_ids.add(n["id"])
+                    continue
+                
+                is_poly = is_polymer_related(n)
+                keywords = get_matched_keywords(n) if is_poly else []
+                
+                uz_obj = GostNotification(
+                    id=n["id"],
+                    country="UZ",
+                    prns_code=n.get("prns_code", ""),
+                    doc_type=n.get("doc_type", "O'zDSt (СТ УЗ)"),
+                    project_name=n.get("project_name", ""),
+                    technical_committee=n.get("technical_committee", ""),
+                    developer=n.get("developer", ""),
+                    start_date=n.get("start_date", ""),
+                    end_date=n.get("end_date"),
+                    status=n.get("status", ""),
+                    url=n.get("url", ""),
+                    is_polymer=is_poly,
+                    matched_keywords=keywords,
+                    fetched_date=n.get("fetched_date", today),
+                )
+                
+                db.add(uz_obj)
+                new_gost_ids.append(n["id"])
+                existing_uz_ids.add(n["id"])
+                uz_new_count += 1
+                gost_new_count += 1
+                
+                if uz_new_count % 20 == 0:
+                    try:
+                        db.commit()
+                        logger.info(f"💾 Сохранено {uz_new_count} записей UZSTI...")
+                    except Exception as e:
+                        logger.error(f"❌ Ошибка коммита UZSTI: {e}")
+                        db.rollback()
+            
+            logger.info(f"✅ UZSTI обработано. Новых: {uz_new_count}")
+        except KeyboardInterrupt:
+            logger.warning("⚠️ Парсинг UZSTI прерван пользователем (Ctrl+C)")
+            raise
+        except Exception as e:
+            logger.error(f"❌ Ошибка при парсинге UZSTI: {e}", exc_info=True)
+            try:
+                db.rollback()
+            except:
+                pass
+            
         db.commit()
 
         log.status = "success"
@@ -496,15 +772,16 @@ def run_scraping(
         log.sp_new = sp_new_count
         log.new_gost_ids = new_gost_ids
         log.new_sp_ids = new_sp_ids
-        log.new_npa_ids = new_npa_ids  # ← ДОБАВЛЕНО
-        log.npa_new = npa_new_count    # ← ДОБАВЛЕНО
+        log.new_npa_ids = new_npa_ids 
+        log.npa_new = npa_new_count    
         log.updated_statuses = updated_statuses
         log.finished_at = datetime.now(timezone.utc)
         db.commit()
 
         logger.info(
             f"🎉 Скрапинг завершён: "
-            f"ГОСТ +{gost_new_count}, СП +{sp_new_count}, НПА +{npa_new_count}"
+            f"ГОСТ +{gost_new_count} (RU, KZ: {kz_new_count}, BY: {by_new_count}, UZ: {uz_new_count}), "
+            f"СП +{sp_new_count}, НПА +{npa_new_count}"
         )
         return ScrapingResponse(
             status="success",
@@ -543,11 +820,16 @@ def list_npa(
     is_polymer: Optional[bool] = None,
     limit: int = Query(default=500, le=5000),
     db: Session = Depends(get_db),
+    is_priority: Optional[bool] = None,
 ):
     q = db.query(NpaProject)
     if year:
         all_items = q.all()
         all_items = [n for n in all_items if _extract_year(n.published_date) == year]
+        if is_priority is not None:
+            all_items = [n for n in all_items if n.is_priority == is_priority]
+        if is_polymer is not None:
+            all_items = [n for n in all_items if n.is_polymer == is_polymer]
         return all_items[:limit]
     if status:
         q = q.filter(NpaProject.status == status)
@@ -555,4 +837,38 @@ def list_npa(
         q = q.filter(NpaProject.developer.ilike(f"%{developer}%"))
     if is_polymer is not None:
         q = q.filter(NpaProject.is_polymer == is_polymer)
+    if is_priority is not None:
+        q = q.filter(NpaProject.is_priority == is_priority)
     return q.order_by(NpaProject.created_at.desc()).limit(limit).all()
+
+@router.get("/approved-discussions", response_model=List[GostNotificationOut])
+def get_approved_discussions(
+    year: Optional[int] = None,
+    tk: Optional[str] = None,
+    is_polymer: Optional[bool] = None,
+    limit: int = Query(default=500, le=5000),
+    db: Session = Depends(get_db),
+):
+    """Получить завершенные публичные обсуждения (статус: Публичное обсуждение завершено)."""
+    
+    # Завершенные = ГОСТы со статусом "Публичное обсуждение завершено"
+    q = db.query(GostNotification).filter(
+        GostNotification.status == "Публичное обсуждение завершено"
+    )
+    
+    if year:
+        all_items = q.all()
+        # Фильтруем по году завершения (completed_date)
+        filtered = [
+            g for g in all_items 
+            if _extract_year(g.end_date) == year
+        ]
+        return filtered[:limit]
+    
+    if tk:
+        q = q.filter(GostNotification.technical_committee.ilike(f"%{tk}%"))
+    if is_polymer is not None:
+        q = q.filter(GostNotification.is_polymer == is_polymer)
+    
+    # Сортируем по дате завершения (убывание)
+    return q.order_by(GostNotification.end_date.desc()).limit(limit).all()

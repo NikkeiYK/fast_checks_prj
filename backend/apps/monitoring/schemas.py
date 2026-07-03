@@ -55,14 +55,35 @@ class TechnicalCommitteeOut(BaseModel):
 class TechnicalCommitteeCreate(BaseModel):
     name: str
     is_ours: bool = False
+    
+
+# ── НПА ──────────────────────────────────────────────────────
+class NpaProjectOut(BaseModel):
+    id: str
+    title: Optional[str] = None
+    developer: Optional[str] = None
+    doc_type: Optional[str] = None
+    created_date: Optional[str] = None
+    published_date: Optional[str] = None
+    stage: Optional[str] = None
+    status: Optional[str] = None
+    procedure: Optional[str] = None
+    url: Optional[str] = None
+    is_polymer: bool = False
+    is_priority: bool = False
+    matched_keywords: Optional[List[str]] = None
+
+    class Config:
+        from_attributes = True
 
 
 # ── Статистика ───────────────────────────────────────────────
 class DashboardStats(BaseModel):
     total_gost: int
     total_sp: int
-    total_npa: int  # ← НОВОЕ
+    total_npa: int 
     active_count: int
+    total_approved: int = 0
     completed_count: int
     polymer_total: int
     polymer_commented: int
@@ -82,6 +103,7 @@ class DashboardResponse(BaseModel):
     my_tks: List[str]
     last_updated: str
     current_year: int
+    available_countries: List[dict] = []
 
 
 # ── Scraping ─────────────────────────────────────────────────
@@ -111,17 +133,18 @@ class ScrapingLogOut(BaseModel):
     class Config:
         from_attributes = True
 
-# ── НПА ──────────────────────────────────────────────────────
-class NpaProjectOut(BaseModel):
-    id: str
-    title: Optional[str] = None
-    developer: Optional[str] = None
+# ── Завершенные обсуждения ──────────────────────────────────
+class ApprovedDiscussionOut(BaseModel):
+    id: int
+    uuid: Optional[str] = None
+    prns: Optional[str] = None
+    sub_program: Optional[str] = None
     doc_type: Optional[str] = None
-    created_date: Optional[str] = None
-    published_date: Optional[str] = None
-    stage: Optional[str] = None
-    status: Optional[str] = None
-    procedure: Optional[str] = None
+    project_name: Optional[str] = None
+    tk: Optional[str] = None
+    developer: Optional[str] = None
+    submitted_date: Optional[str] = None
+    completed_date: Optional[str] = None
     url: Optional[str] = None
     is_polymer: bool = False
     matched_keywords: Optional[List[str]] = None

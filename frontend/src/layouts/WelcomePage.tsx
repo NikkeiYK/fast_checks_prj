@@ -26,7 +26,7 @@ const services: ServiceCard[] = [
   {
     icon: "",
     title: "НТР", 
-    description: "Мониторинг ростандартов",
+    description: "Мониторинг стандартов",
     path: "/monitoring"
   }
 ];

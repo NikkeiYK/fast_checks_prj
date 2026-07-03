@@ -1,7 +1,9 @@
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+// ── ГОСТ ─────────────────────────────────────────────────────
 export interface GostNotification {
   id: string;
+  country: string; 
   prns_code: string | null;
   doc_type: string | null;
   project_name: string | null;
@@ -16,8 +18,10 @@ export interface GostNotification {
   fetched_date: string | null;
 }
 
+// ── СП ───────────────────────────────────────────────────────
 export interface SpNotification {
   id: string;
+  country: string; 
   notification_type: string | null;
   doc_type: string | null;
   project_name: string | null;
@@ -30,14 +34,33 @@ export interface SpNotification {
   matched_keywords: string[] | null;
 }
 
+// ── НПА ──────────────────────────────────────────────────────
+export interface NpaProject {
+  id: string;
+  country: string;  
+  title: string | null;
+  developer: string | null;
+  doc_type: string | null;
+  created_date: string | null;
+  published_date: string | null;
+  stage: string | null;
+  status: string | null;
+  procedure: string | null;
+  url: string | null;
+  is_polymer: boolean;
+  matched_keywords: string[] | null;
+  is_priority: boolean;
+}
+
+// ── СТАТИСТИКА ───────────────────────────────────────────────
 export interface DashboardStats {
   total_gost: number;
   total_sp: number;
+  total_npa: number;
   active_count: number;
   completed_count: number;
   polymer_total: number;
   polymer_commented: number;
-  total_npa: number;
   status_labels: string[];
   status_values: number[];
   month_labels: string[];
@@ -46,24 +69,31 @@ export interface DashboardStats {
   all_tk_values: number[];
 }
 
+// ── ОТВЕТ ДАШБОРДА ───────────────────────────────────────────
 export interface DashboardResponse {
   gost: GostNotification[];
   sp: SpNotification[];
+  npa: NpaProject[];
   stats: DashboardStats;
   my_tks: string[];
-  npa: NpaProject[];
   last_updated: string;
   current_year: number;
+  available_countries: Array<{
+    code: string;
+    name: string;
+    flag: string;
+  }>;
 }
 
+// ── РЕЗУЛЬТАТ Скрапинга ──────────────────────────────────────
 export interface ScrapingResult {
   status: string;
   gost_new: number;
   sp_new: number;
+  npa_new: number;
   message: string;
   new_gost_ids: string[];
   new_sp_ids: string[];
-  npa_new: number;
   new_npa_ids: string[];
   updated_statuses: Array<{
     id: string;
@@ -74,6 +104,7 @@ export interface ScrapingResult {
   }>;
 }
 
+// ── ЛОГ Скрапинга ────────────────────────────────────────────
 export interface ScrapingLog {
   id: number;
   started_at: string;
@@ -81,8 +112,10 @@ export interface ScrapingLog {
   status: string;
   gost_new: number;
   sp_new: number;
+  npa_new: number;
   new_gost_ids: string[] | null;
   new_sp_ids: string[] | null;
+  new_npa_ids: string[] | null;
   updated_statuses: Array<{
     id: string;
     type: "gost" | "sp";
@@ -92,6 +125,7 @@ export interface ScrapingLog {
   }> | null;
 }
 
+// ── API КЛАСС ────────────────────────────────────────────────
 class MonitoringAPI {
   private async request<T>(path: string, options?: RequestInit): Promise<T> {
     const res = await fetch(`${API_BASE}${path}`, {
@@ -105,9 +139,13 @@ class MonitoringAPI {
     return res.json();
   }
 
-  async getDashboard(year?: number): Promise<DashboardResponse> {
-    const params = year ? `?year=${year}` : "";
-    return this.request<DashboardResponse>(`/api/monitoring/dashboard${params}`);
+  async getDashboard(year?: number, country?: string): Promise<DashboardResponse> {
+    const params = new URLSearchParams();
+    if (year) params.set("year", String(year));
+    if (country && country !== "all") params.set("country", country);
+    
+    const query = params.toString() ? `?${params.toString()}` : "";
+    return this.request<DashboardResponse>(`/api/monitoring/dashboard${query}`);
   }
 
   async getLastScrapingLog(): Promise<ScrapingLog | null> {
@@ -141,23 +179,6 @@ class MonitoringAPI {
     }
     return res.json();
   }
-
-  
 }
 
 export const monitoringApi = new MonitoringAPI();
-
-export interface NpaProject {
-  id: string;
-  title: string | null;
-  developer: string | null;
-  doc_type: string | null;
-  created_date: string | null;
-  published_date: string | null;
-  stage: string | null;
-  status: string | null;
-  procedure: string | null;
-  url: string | null;
-  is_polymer: boolean;
-  matched_keywords: string[] | null;
-}

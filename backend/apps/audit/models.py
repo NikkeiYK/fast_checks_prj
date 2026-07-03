@@ -15,6 +15,7 @@ class Employee(Base):
     fio = Column(String, index=True)
     department = Column(String)
     center = Column(String, index=True)
+    is_active = Column(Integer, default=1)  # 🔹 1 = активен, 0 = неактивен (удален из списка)
     __table_args__ = (UniqueConstraint('fio', 'department', 'center', name='uq_emp_dept_center'),)
     sessions = relationship("AuditSession", back_populates="employee", passive_deletes=True)
 

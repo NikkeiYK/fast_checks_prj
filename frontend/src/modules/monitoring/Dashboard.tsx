@@ -12,6 +12,8 @@ import { DiffWidget } from "./components/DiffWidget";
 import { OurTkVsAllChart } from "./components/OurTKVsAllChart";
 import { ProfiledGostChart } from "./components/ProfiledGostChart";
 import { NpaTable } from "./components/NpaTable";
+import { StatusFilter } from "./components/StatusFilter";
+import { CountryFilter } from "./components/CountryFilter";
 
 export const MonitoringDashboard: React.FC = () => {
   const { isAuthenticated, hasPermission } = useAuth();
@@ -23,6 +25,15 @@ export const MonitoringDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"overview" | "gost" | "sp" | "npa" | "tks">("overview");
   const [error, setError] = useState("");
   const [lastScrapeResult, setLastScrapeResult] = useState<ScrapingResult | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const [selectedCountry, setSelectedCountry] = useState<string>("all");
+
+  const filteredByStatusData = useMemo(() => {
+  if (!data || statusFilter.length === 0) return data?.gost || [];
+  return data.gost.filter((g) => statusFilter.includes(g.status || ""));
+}, [data, statusFilter]);
+
+
   
   // ← НОВОЕ: состояние для фильтра из графиков
   const [chartFilter, setChartFilter] = useState<{
@@ -37,17 +48,17 @@ export const MonitoringDashboard: React.FC = () => {
   }, [isAuthenticated, navigate]);
 
   const loadData = useCallback(async () => {
-    try {
-      setLoading(true);
-      const d = await monitoringApi.getDashboard();
-      setData(d);
-      setError("");
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  try {
+    setLoading(true);
+    const d = await monitoringApi.getDashboard(undefined, selectedCountry);
+    setData(d);
+    setError("");
+  } catch (err: any) {
+    setError(err.message);
+  } finally {
+    setLoading(false);
+  }
+}, [selectedCountry]);
 
   useEffect(() => {
     if (isAuthenticated) loadData();
@@ -74,6 +85,35 @@ export const MonitoringDashboard: React.FC = () => {
     }
   };
 
+  const finalFilteredData = useMemo(() => {
+  let result = filteredByStatusData;
+  
+  if (chartFilter) {
+    switch (chartFilter.type) {
+      case "tk":
+        result = result.filter(g =>
+          g.technical_committee?.toLowerCase().includes(chartFilter.value.toLowerCase())
+        );
+        break;
+      case "status":
+        result = result.filter(g => g.status === chartFilter.value);
+        break;
+      case "polymer":
+        result = result.filter(g => g.is_polymer);
+        break;
+      case "our_tk":
+        result = result.filter(g =>
+          g.technical_committee && data !== null && data.my_tks.some(m =>
+            g.technical_committee!.toLowerCase().includes(m.toLowerCase())
+          )
+        );
+        break;
+    }
+  }
+  
+  return result;
+}, [filteredByStatusData, chartFilter, data]);
+
   // ← НОВЫЕ: обработчики кликов на графиках
   const handleChartClick = useCallback((type: "tk" | "status" | "polymer" | "our_tk", value: string) => {
     setChartFilter({ type, value });
@@ -88,29 +128,6 @@ export const MonitoringDashboard: React.FC = () => {
     setChartFilter(null);
   }, []);
 
-  // ← НОВОЕ: фильтрация данных на основе клика по графику
-  const filteredGostData = useMemo(() => {
-    if (!data || !chartFilter) return data?.gost || [];
-    
-    switch (chartFilter.type) {
-      case "tk":
-        return data.gost.filter(g => 
-          g.technical_committee?.toLowerCase().includes(chartFilter.value.toLowerCase())
-        );
-      case "status":
-        return data.gost.filter(g => g.status === chartFilter.value);
-      case "polymer":
-        return data.gost.filter(g => g.is_polymer);
-      case "our_tk":
-        return data.gost.filter(g => 
-          g.technical_committee && data.my_tks.some(m => 
-            g.technical_committee!.toLowerCase().includes(m.toLowerCase())
-          )
-        );
-      default:
-        return data.gost;
-    }
-  }, [data, chartFilter]);
 
   if (!isAuthenticated) return null;
 
@@ -306,48 +323,77 @@ export const MonitoringDashboard: React.FC = () => {
         )}
 
         {activeTab === "gost" && (
-          <div>
-            {/* ← НОВОЕ: индикатор активного фильтра */}
-            {chartFilter && (
-              <div style={{
-                background: "#fff3e0",
-                border: "2px solid #ff9800",
-                borderRadius: 12,
-                padding: "12px 20px",
-                marginBottom: 20,
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}>
-                <div style={{ color: "#e65100", fontWeight: 500 }}>
-                  🔍 Фильтр активен:{" "}
-                  <strong>
-                    {chartFilter.type === "tk" && `ТК: ${chartFilter.value}`}
-                    {chartFilter.type === "status" && `Статус: ${chartFilter.value}`}
-                    {chartFilter.type === "polymer" && "Полимерные ГОСТы"}
-                    {chartFilter.type === "our_tk" && "Наши ТК"}
-                  </strong>
-                  {" "}({filteredGostData.length} записей)
-                </div>
-                <button
-                  onClick={clearChartFilter}
-                  style={{
-                    padding: "6px 16px",
-                    background: "#ff9800",
-                    color: "#fff",
-                    border: "none",
-                    borderRadius: 6,
-                    cursor: "pointer",
-                    fontWeight: 600,
-                  }}
-                >
-                  ✕ Сбросить фильтр
-                </button>
-              </div>
-            )}
-            <GostTable data={filteredGostData} isMyTk={isMyTk} />
-          </div>
-        )}
+  <div>
+    {/* Фильтр по странам */}
+    <CountryFilter
+      countries={data.available_countries || []}
+      selectedCountry={selectedCountry}
+      onChange={setSelectedCountry}
+    />
+    {/* Фильтр по статусам */}
+    <StatusFilter
+      selectedStatuses={statusFilter}
+      onChange={setStatusFilter}
+    />
+    
+    {/* Индикатор активного фильтра из графика */}
+    {chartFilter && (
+      <div style={{
+        background: "#fff3e0",
+        border: "2px solid #ff9800",
+        borderRadius: 12,
+        padding: "12px 20px",
+        marginBottom: 20,
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+      }}>
+        <div style={{ color: "#e65100", fontWeight: 500 }}>
+          🔍 Фильтр активен:{" "}
+          <strong>
+            {chartFilter.type === "tk" && `ТК: ${chartFilter.value}`}
+            {chartFilter.type === "status" && `Статус: ${chartFilter.value}`}
+            {chartFilter.type === "polymer" && "Полимерные ГОСТы"}
+            {chartFilter.type === "our_tk" && "Наши ТК"}
+          </strong>
+          {" "}({finalFilteredData.length} записей)
+        </div>
+        <button
+          onClick={clearChartFilter}
+          style={{
+            padding: "6px 16px",
+            background: "#ff9800",
+            color: "#fff",
+            border: "none",
+            borderRadius: 6,
+            cursor: "pointer",
+            fontWeight: 600,
+          }}
+        >
+          ✕ Сбросить фильтр
+        </button>
+      </div>
+    )}
+    
+    {/* Показываем количество выбранных статусов */}
+    {statusFilter.length > 0 && (
+      <div style={{
+        marginBottom: 16,
+        padding: "10px 16px",
+        background: "#e8f5e9",
+        borderRadius: 8,
+        fontSize: "0.9rem",
+        color: "#2e7d32",
+        fontWeight: 500,
+      }}>
+        📊 Показано: <strong>{finalFilteredData.length}</strong> ГОСТов 
+        (из {data.gost.length}) по выбранным статусам
+      </div>
+    )}
+    
+    <GostTable data={finalFilteredData} isMyTk={isMyTk} />
+  </div>
+)}
         {activeTab === "sp" && <SpTable data={data.sp} />}
         {activeTab === "npa" && <NpaTable data={data.npa} />}
         {activeTab === "tks" && (

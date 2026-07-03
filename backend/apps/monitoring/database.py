@@ -41,6 +41,7 @@ class GostNotification(Base):
     __tablename__ = "gost_notifications"
 
     id = Column(String, primary_key=True, index=True)
+    country = Column(String, default="RU", index=True, nullable=False)  # ← RU, KZ, BY, UZ
     prns_code = Column(String, index=True)
     doc_type = Column(String)
     project_name = Column(Text)
@@ -61,6 +62,7 @@ class SpNotification(Base):
     __tablename__ = "sp_notifications"
 
     id = Column(String, primary_key=True, index=True)
+    country = Column(String, default="RU", index=True, nullable=False)
     notification_type = Column(String)
     doc_type = Column(String)
     project_name = Column(Text)
@@ -106,6 +108,7 @@ class NpaProject(Base):
 
     id = Column(String, primary_key=True, index=True)  # ID проекта (например, 04/15/06-26/00168649)
     title = Column(Text)
+    country = Column(String, default="RU", index=True, nullable=False)
     developer = Column(String, index=True)  # Орган государственной власти
     doc_type = Column(String)  # Вид (Проект федерального закона, Проект постановления и т.д.)
     created_date = Column(String)
@@ -113,6 +116,27 @@ class NpaProject(Base):
     stage = Column(String)  # Этап (Текст, Уведомление и т.д.)
     status = Column(String, index=True)  # Статус (Идет обсуждение и т.д.)
     procedure = Column(String)  # Процедура (ОРВ, Антикоррупционная экспертиза и т.д.)
+    url = Column(String)
+    is_priority = Column(Boolean, default=False, index=True)
+    is_polymer = Column(Boolean, default=False, index=True)
+    matched_keywords = Column(JSON)
+    fetched_date = Column(String)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    
+class ApprovedDiscussion(Base):
+    """Завершенные публичные обсуждения (rst.gov.ru)."""
+    __tablename__ = "approved_discussions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    uuid = Column(String, unique=True, index=True)
+    prns = Column(String, index=True)
+    sub_program = Column(String)
+    doc_type = Column(String)
+    project_name = Column(Text)
+    tk = Column(String, index=True)
+    developer = Column(String)
+    submitted_date = Column(String)
+    completed_date = Column(String, index=True)
     url = Column(String)
     is_polymer = Column(Boolean, default=False, index=True)
     matched_keywords = Column(JSON)

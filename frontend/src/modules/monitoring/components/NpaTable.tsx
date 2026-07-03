@@ -3,12 +3,11 @@ import DataTable, { type TableColumn } from "react-data-table-component";
 import type { NpaProject } from "../../../api/monitoring/api";
 import * as XLSX from "xlsx";
 
-interface Props {
-  data: NpaProject[];
-}
+interface Props { data: NpaProject[]; }
 
 const exportToExcel = (data: NpaProject[], filename: string) => {
   const exportData = data.map(row => ({
+    "Приоритет": row.is_priority ? "Да" : "Нет",
     "ID проекта": row.id || "",
     "Наименование": row.title || "",
     "Разработчик": row.developer || "",
@@ -45,7 +44,6 @@ const StatusBadge: React.FC<{ status: string | null }> = ({ status }) => {
 
 const parseDate = (d: string | null): number => {
   if (!d) return 0;
-  // Формат: "17 июня 2026"
   const months: Record<string, number> = {
     "января": 0, "февраля": 1, "марта": 2, "апреля": 3,
     "мая": 4, "июня": 5, "июля": 6, "августа": 7,
@@ -64,18 +62,35 @@ const parseDate = (d: string | null): number => {
 
 export const NpaTable: React.FC<Props> = ({ data }) => {
   const [filter, setFilter] = useState("");
+  const [priorityFilter, setPriorityFilter] = useState<"all" | "priority" | "non-priority">("all");
 
   const filtered = useMemo(() => {
-    if (!filter) return data;
-    const f = filter.toLowerCase();
-    return data.filter(n =>
-      (n.title || "").toLowerCase().includes(f) ||
-      (n.id || "").toLowerCase().includes(f) ||
-      (n.developer || "").toLowerCase().includes(f) ||
-      (n.doc_type || "").toLowerCase().includes(f) ||
-      (n.status || "").toLowerCase().includes(f)
-    );
-  }, [data, filter]);
+    let result = data;
+    
+    // Фильтр по приоритету
+    if (priorityFilter === "priority") {
+      result = result.filter(n => n.is_priority);
+    } else if (priorityFilter === "non-priority") {
+      result = result.filter(n => !n.is_priority);
+    }
+    
+    // Текстовый поиск
+    if (filter) {
+      const f = filter.toLowerCase();
+      result = result.filter(n =>
+        (n.title || "").toLowerCase().includes(f) ||
+        (n.id || "").toLowerCase().includes(f) ||
+        (n.developer || "").toLowerCase().includes(f) ||
+        (n.doc_type || "").toLowerCase().includes(f) ||
+        (n.status || "").toLowerCase().includes(f)
+      );
+    }
+    
+    return result;
+  }, [data, filter, priorityFilter]);
+
+  // Подсчёт приоритетных
+  const priorityCount = useMemo(() => data.filter(n => n.is_priority).length, [data]);
 
   const columns: TableColumn<NpaProject>[] = [
     {
@@ -102,6 +117,18 @@ export const NpaTable: React.FC<Props> = ({ data }) => {
       selector: r => r.developer || "—",
       width: "200px",
       sortable: true,
+      // cell: r => (
+      //   <span style={{ display: "inline-flex", alignItems: "center", flexWrap: "wrap", gap: 4 }}>
+      //     <span>{r.developer || "—"}</span>
+      //     {r.is_priority && (
+      //       <span style={{
+      //         background: "#FC5A41", color: "#fff", fontSize: "0.65rem",
+      //         padding: "2px 6px", borderRadius: 8, whiteSpace: "nowrap",
+      //         fontWeight: 600,
+      //       }}>Приоритет</span>
+      //     )}
+      //   </span>
+      // ),
     },
     {
       name: "Вид",
@@ -139,7 +166,15 @@ export const NpaTable: React.FC<Props> = ({ data }) => {
       background: "#fff", borderRadius: 12, padding: 20,
       boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
     }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+      {/* Панель фильтров */}
+      <div style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 16,
+        gap: 12,
+        flexWrap: "wrap",
+      }}>
         <input
           type="text"
           placeholder="🔍 Поиск по названию, ID, разработчику, виду, статусу..."
@@ -147,33 +182,103 @@ export const NpaTable: React.FC<Props> = ({ data }) => {
           onChange={e => setFilter(e.target.value)}
           style={{
             flex: 1,
-            padding: "12px 16px",
-            border: "2px solid #e0e0e0",
-            borderRadius: 10,
-            fontSize: "0.95rem",
+            minWidth: "250px",
+            padding: "10px 14px",
+            border: "1px solid #ddd",
+            borderRadius: 8,
+            fontSize: 14,
             boxSizing: "border-box",
           }}
           onFocus={e => e.target.style.borderColor = "#008B92"}
-          onBlur={e => e.target.style.borderColor = "#e0e0e0"}
+          onBlur={e => e.target.style.borderColor = "#ddd"}
         />
         <button
           onClick={() => exportToExcel(filtered, "npa_export")}
-          disabled={filtered.length === 0}
           style={{
-            marginLeft: 12,
-            padding: "12px 24px",
-            background: filtered.length === 0 ? "#ccc" : "#217346",
+            padding: "10px 20px",
+            background: "#217346",
             color: "#fff",
             border: "none",
-            borderRadius: 10,
-            cursor: filtered.length === 0 ? "not-allowed" : "pointer",
+            borderRadius: 8,
+            cursor: "pointer",
             fontWeight: 600,
-            fontSize: "0.95rem",
+            fontSize: 14,
+            whiteSpace: "nowrap",
           }}
         >
           📥 Экспорт в Excel
         </button>
       </div>
+
+      {/* Фильтр по приоритету */}
+      <div style={{
+        display: "flex",
+        gap: 8,
+        marginBottom: 16,
+        alignItems: "center",
+        flexWrap: "wrap",
+      }}>
+        <span style={{ fontSize: "0.9rem", color: "#555", fontWeight: 500 }}>
+          Приоритет:
+        </span>
+        <button
+          onClick={() => setPriorityFilter("all")}
+          style={{
+            padding: "6px 14px",
+            background: priorityFilter === "all" ? "#008B92" : "#f5f5f5",
+            color: priorityFilter === "all" ? "#fff" : "#555",
+            border: `1px solid ${priorityFilter === "all" ? "#008B92" : "#ddd"}`,
+            borderRadius: 16,
+            cursor: "pointer",
+            fontSize: "0.85rem",
+            fontWeight: priorityFilter === "all" ? 600 : 400,
+          }}
+        >
+          Все ({data.length})
+        </button>
+        <button
+          onClick={() => setPriorityFilter("priority")}
+          style={{
+            padding: "6px 14px",
+            background: priorityFilter === "priority" ? "#FC5A41" : "#fff5f3",
+            color: priorityFilter === "priority" ? "#fff" : "#FC5A41",
+            border: `1px solid ${priorityFilter === "priority" ? "#FC5A41" : "#FC5A41"}`,
+            borderRadius: 16,
+            cursor: "pointer",
+            fontSize: "0.85rem",
+            fontWeight: priorityFilter === "priority" ? 600 : 400,
+          }}
+        >
+          ⭐ Приоритетные ({priorityCount})
+        </button>
+        <button
+          onClick={() => setPriorityFilter("non-priority")}
+          style={{
+            padding: "6px 14px",
+            background: priorityFilter === "non-priority" ? "#008B92" : "#f5f5f5",
+            color: priorityFilter === "non-priority" ? "#fff" : "#555",
+            border: `1px solid ${priorityFilter === "non-priority" ? "#008B92" : "#ddd"}`,
+            borderRadius: 16,
+            cursor: "pointer",
+            fontSize: "0.85rem",
+            fontWeight: priorityFilter === "non-priority" ? 600 : 400,
+          }}
+        >
+          Обычные ({data.length - priorityCount})
+        </button>
+      </div>
+
+      {/* Счётчик результатов */}
+      {(filter || priorityFilter !== "all") && (
+        <div style={{
+          marginBottom: 16, padding: "10px 16px",
+          background: "#f0f9fa", borderRadius: 8,
+          fontSize: "0.9rem", color: "#006b70",
+          fontWeight: 500,
+        }}>
+          Найдено: <strong>{filtered.length}</strong> из <strong>{data.length}</strong> записей
+        </div>
+      )}
 
       <DataTable
         columns={columns}
@@ -185,6 +290,13 @@ export const NpaTable: React.FC<Props> = ({ data }) => {
         pointerOnHover
         defaultSortFieldId={5}
         defaultSortAsc={false}
+        conditionalRowStyles={[{
+          when: row => row.is_priority,
+          style: {
+            backgroundColor: "#e6f7f8",
+            borderLeft: "4px solid #008B92",
+          },
+        }]}
         noDataComponent={<div style={{ padding: 40, color: "#999" }}>Нет данных</div>}
       />
     </div>

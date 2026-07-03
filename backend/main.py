@@ -36,7 +36,7 @@ def health():
     return {
         "status": "ok", 
         "env": "amvera" if os.environ.get("AMVERA") == "1" else "local", 
-        "apps": ["audit", "climate"],
+        "apps": ["audit", "climate", "monitoring"],
         "cors_origins": get_cors_origins()  # Для отладки
     }
 
